@@ -1,0 +1,2 @@
+# kerouac
+A minimalist CI.
