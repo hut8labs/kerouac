@@ -1,0 +1,5 @@
+{
+    "BuildScript": "build.sh",
+    "BuildScriptArgs": ["arg1", "arg 2"],
+    "NumBuildsToKeep": 22
+}
