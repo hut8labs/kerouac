@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -35,6 +36,9 @@ func main() {
 	if *dryRun {
 		log.Printf("Dry run, will print actions but not take them.")
 	}
+
+	createBuildRecord(buildId)
+
 	logFile := configureLogging(buildId)
 	defer logFile.Close()
 
@@ -42,7 +46,7 @@ func main() {
 
 	config, err := ParseConfigFile(configFile)
 	if err != nil {
-		log.Fatalf("Error parsing config file: %s", err)
+		logAndDie(fmt.Sprintf("Error parsing config file: %s", err), buildId)
 	}
 
 	runBuild(srcDir, config, buildId)
@@ -52,6 +56,23 @@ func main() {
 	// TODO clean up old builds unless told not to
 
 	// TODO update the html
+}
+
+func logAndDie(msg string, buildId BuildId) {
+	if err := MarkBuildFailed(buildId); err != nil {
+		log.Printf("Could not mark build failed in db: %s", err)
+	}
+	log.Fatalf(msg)
+}
+
+func createBuildRecord(buildId BuildId) {
+	log.Printf("Creating db record for build.")
+
+	if !*dryRun {
+		if err := CreateBuildRecord(buildId); err != nil {
+			log.Fatalf("Could not create build record: %s", err)
+		}
+	}
 }
 
 func removeSrcDir(srcDir string) {
@@ -70,7 +91,7 @@ func createTarball(srcDir string, buildId BuildId) {
 
 	if !*dryRun {
 		if err := CreateTarball(srcDir, buildId); err != nil {
-			log.Fatalf("Error creating tarball: %s", err)
+			logAndDie(fmt.Sprintf("Error creating tarball: %s", err), buildId)
 		}
 	}
 }
@@ -82,16 +103,16 @@ func runBuild(srcDir string, config *Config, buildId BuildId) {
 		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, buildId)
 
 		if err != nil {
-			log.Fatalf("Completed build with error: %s", err)
+			log.Printf("Completed build with error: %s", err)
+			MarkBuildFailed(buildId)
 		} else {
 			log.Printf("Completed build successfully.")
+			MarkBuildSucceeded(buildId)
 		}
 
 		log.Printf("Build script stdout in: %s", buildOutput.StdoutPath)
 		log.Printf("Build scrip stderr in: %s", buildOutput.StderrPath)
 	}
-
-	// TODO: log in csv form
 }
 
 func configureLogging(buildId BuildId) *os.File {

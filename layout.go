@@ -10,7 +10,7 @@ import (
 // enforce the following layout (the [FmtXYZ] denote which functions will
 // return that path):
 //
-// - builds.csv
+// - builds.db [FmtBuildDbPath]
 // - builds
 //   - project_one
 //     - buildtag
@@ -31,6 +31,7 @@ const (
 	StdoutLogName  = "stdout"
 	KerouacLogName = "kerouac.log"
 	TarballName    = "build.tar.gz"
+	BuildDbName    = "builds.db"
 )
 
 func FmtBuildDir(buildId BuildId) string {
@@ -56,4 +57,8 @@ func FmtKerouacLogPath(buildId BuildId) string {
 
 func FmtTarballPath(buildId BuildId) string {
 	return filepath.Join(FmtBuildDir(buildId), TarballName)
+}
+
+func FmtBuildDbPath(rootDir string) string {
+	return filepath.Join(rootDir, BuildDbName)
 }

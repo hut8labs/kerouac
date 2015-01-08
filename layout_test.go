@@ -26,6 +26,7 @@ var (
 	KnownStdoutPath  = filepath.Join(KnownLogsDir, StdoutLogName)
 	KnownKerouacPath = filepath.Join(KnownLogsDir, KerouacLogName)
 	KnownTarballPath = filepath.Join(KnownBuildDir, TarballName)
+	KnownBuildDbPath = filepath.Join(KnownRootDir, BuildDbName)
 )
 
 // Create a known build id from constants, including the datetime, so we can
@@ -79,5 +80,13 @@ func TestFmtTarballPath(t *testing.T) {
 	tarballPath := FmtTarballPath(buildId)
 	if tarballPath != KnownTarballPath {
 		t.Errorf("FmtTarballPath returned %s not %s", tarballPath, KnownTarballPath)
+	}
+}
+
+func TestFmtBuildDbName(t *testing.T) {
+	buildId := knownBuildId()
+	buildDbPath := FmtBuildDbPath(buildId.RootDir)
+	if buildDbPath != KnownBuildDbPath {
+		t.Errorf("FmtBuildDbPath returned %s not %s", buildDbPath, KnownBuildDbPath)
 	}
 }
