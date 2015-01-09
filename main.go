@@ -49,13 +49,19 @@ func main() {
 		logAndDie(fmt.Sprintf("Error parsing config file: %s", err), buildId)
 	}
 
-	runBuild(srcDir, config, buildId)
+	buildSuceeded := runBuild(srcDir, config, buildId)
 	createTarball(srcDir, buildId)
 	removeSrcDir(srcDir)
 
 	// TODO clean up old builds unless told not to
 
 	// TODO update the html
+
+	if buildSuceeded {
+		os.Exit(0)
+	} else {
+		os.Exit(1)
+	}
 }
 
 func logAndDie(msg string, buildId BuildId) {
@@ -96,8 +102,10 @@ func createTarball(srcDir string, buildId BuildId) {
 	}
 }
 
-func runBuild(srcDir string, config *Config, buildId BuildId) {
+func runBuild(srcDir string, config *Config, buildId BuildId) bool {
 	log.Printf("Running build in dir %s with script %s and args %s", srcDir, config.BuildScript, config.BuildScriptArgs)
+
+	succeeded := false
 
 	if !*dryRun {
 		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, config.TimeoutInSecs, buildId)
@@ -108,11 +116,14 @@ func runBuild(srcDir string, config *Config, buildId BuildId) {
 		} else {
 			log.Printf("Completed build successfully.")
 			MarkBuildSucceeded(buildId)
+			succeeded = true
 		}
 
 		log.Printf("Build script stdout in: %s", buildOutput.StdoutPath)
 		log.Printf("Build scrip stderr in: %s", buildOutput.StderrPath)
 	}
+
+	return succeeded
 }
 
 func configureLogging(buildId BuildId) *os.File {
