@@ -32,7 +32,7 @@ type BuildOutput struct {
 //
 // The script's stdout and stderr will be captured and written to the
 // appropriate directory under kerouacResultsRootDir (see dirs.go for more).
-func RunBuildScript(buildDir string, buildScript string, buildScriptArgs []string, buildId BuildId) (*BuildOutput, error) {
+func RunBuildScript(buildDir string, buildScript string, buildScriptArgs []string, timeoutInSecs int, buildId BuildId) (*BuildOutput, error) {
 	cmd := exec.Command(buildScript, buildScriptArgs...)
 	cmd.Dir = buildDir
 
@@ -60,7 +60,7 @@ func RunBuildScript(buildDir string, buildScript string, buildScriptArgs []strin
 
 	go runCmd(cmd, cmdDone)
 
-	err = waitForCmd(cmd, cmdDone)
+	err = waitForCmd(cmd, timeoutInSecs, cmdDone)
 
 	return buildOutput, err
 }
@@ -69,15 +69,14 @@ func runCmd(cmd *exec.Cmd, cmdDone chan<- error) {
 	cmdDone <- cmd.Run()
 }
 
-func waitForCmd(cmd *exec.Cmd, cmdDone <-chan error) error {
+func waitForCmd(cmd *exec.Cmd, timeoutInSecs int, cmdDone <-chan error) error {
 	var err error
 
 	select {
 	case result := <-cmdDone:
 		err = result
-	case <-time.After(time.Second * 30):
-		// TODO allow configuration for timeout
-		err = fmt.Errorf("Execution of build timed out after %d seconds", 30)
+	case <-time.After(time.Second * time.Duration(timeoutInSecs)):
+		err = fmt.Errorf("Execution of build timed out after %d seconds", timeoutInSecs)
 		log.Printf("Attempting to kill long-running build ...")
 		if perr := cmd.Process.Kill(); perr != nil {
 			// TODO: try -9'ing with signal

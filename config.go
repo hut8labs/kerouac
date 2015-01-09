@@ -10,9 +10,13 @@ type Config struct {
 	BuildScript     string
 	BuildScriptArgs []string
 	NumBuildsToKeep int
+	TimeoutInSecs   int
 }
 
-const DefaultNumBuildsToKeep = 10
+const (
+	DefaultNumBuildsToKeep = 10
+	InvalidTimeoutInSecs   = -1
+)
 
 var DefaultBuildScriptArgs = []string{}
 
@@ -23,7 +27,7 @@ func ParseConfigFile(path string) (*Config, error) {
 		return nil, fmt.Errorf("Could not read config file: %s", err)
 	}
 
-	config := Config{NumBuildsToKeep: DefaultNumBuildsToKeep, BuildScriptArgs: DefaultBuildScriptArgs}
+	config := Config{NumBuildsToKeep: DefaultNumBuildsToKeep, BuildScriptArgs: DefaultBuildScriptArgs, TimeoutInSecs: InvalidTimeoutInSecs}
 
 	decoder := json.NewDecoder(file)
 
@@ -31,5 +35,21 @@ func ParseConfigFile(path string) (*Config, error) {
 		return nil, fmt.Errorf("Error parsing json: %s", err)
 	}
 
+	if err = checkRequiredConfig(config); err != nil {
+		return nil, err
+	}
+
 	return &config, nil
+}
+
+func checkRequiredConfig(config Config) error {
+	if config.BuildScript == "" {
+		return fmt.Errorf("BuildScript is required in the config.")
+	}
+
+	if config.TimeoutInSecs == InvalidTimeoutInSecs {
+		return fmt.Errorf("TimeoutInSecs is required in the config.")
+	}
+
+	return nil
 }

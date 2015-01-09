@@ -2,5 +2,6 @@
     "BuildScript": "build.sh",
     "NumBuildsToKeep": 22,
     "BuildScriptArgs": ["arg1", "arg 2"],
-    "UnusedField": "HI"
+    "UnusedField": "HI",
+    "TimeoutInSecs": 30
 }

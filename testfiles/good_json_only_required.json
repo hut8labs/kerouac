@@ -1,3 +1,4 @@
 {
-    "BuildScript": "build.sh"
+    "BuildScript": "build.sh",
+    "TimeoutInSecs": 30
 }

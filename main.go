@@ -100,7 +100,7 @@ func runBuild(srcDir string, config *Config, buildId BuildId) {
 	log.Printf("Running build in dir %s with script %s and args %s", srcDir, config.BuildScript, config.BuildScriptArgs)
 
 	if !*dryRun {
-		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, buildId)
+		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, config.TimeoutInSecs, buildId)
 
 		if err != nil {
 			log.Printf("Completed build with error: %s", err)

@@ -13,7 +13,7 @@ func TestConfigBarfsOnNonExistingFile(t *testing.T) {
 	}
 
 	if err == nil {
-		t.Errorf("Err was nil on non existing config file")
+		t.Errorf("Err was nil on non existing config file, %s", err)
 	}
 }
 
@@ -25,7 +25,7 @@ func TestConfigBarfsOnBadJson(t *testing.T) {
 	}
 
 	if err == nil {
-		t.Errorf("Err was nil on bad json file")
+		t.Errorf("Err was nil on bad json file, %s", err)
 	}
 }
 
@@ -35,7 +35,7 @@ func TestConfigParsesGoodJson(t *testing.T) {
 	assertExpectedConfig(config, t, "good config")
 
 	if err != nil {
-		t.Errorf("Err was non-nil on good json file")
+		t.Errorf("Err was non-nil on good json file, %s", err)
 	}
 }
 
@@ -45,7 +45,7 @@ func TestConfigParsesGoodJsonWithExtraFlags(t *testing.T) {
 	assertExpectedConfig(config, t, "config with extra flags")
 
 	if err != nil {
-		t.Errorf("Err was non-nil on good json file")
+		t.Errorf("Err was non-nil on good json file with extra flags, %s", err)
 	}
 }
 
@@ -53,7 +53,7 @@ func TestDefaultsOnNonRequired(t *testing.T) {
 	config, err := ParseConfigFile("testfiles/good_json_only_required.json")
 
 	if err != nil {
-		t.Errorf("Err was non-nil on good json file with only required")
+		t.Errorf("Err was non-nil on good json file with only required, %s", err)
 	}
 
 	if config == nil {
@@ -66,6 +66,28 @@ func TestDefaultsOnNonRequired(t *testing.T) {
 
 	if !reflect.DeepEqual(config.BuildScriptArgs, DefaultBuildScriptArgs) {
 		t.Errorf("Did not use default BuildScriptArgs: %+v", config)
+	}
+}
+
+func TestRequiredConfig(t *testing.T) {
+	config, err := ParseConfigFile("testfiles/missing_build_script.json")
+
+	if config != nil {
+		t.Errorf("Missing BuildScript returned config")
+	}
+
+	if err == nil {
+		t.Errorf("No error on missing BuildScript")
+	}
+
+	config, err = ParseConfigFile("testfiles/missing_timeout.json")
+
+	if config != nil {
+		t.Errorf("Missing TimeoutInSecs returned config")
+	}
+
+	if err == nil {
+		t.Errorf("No error on missing TimeoutInSecs")
 	}
 }
 
@@ -84,5 +106,9 @@ func assertExpectedConfig(config *Config, t *testing.T, context string) {
 
 	if !reflect.DeepEqual(config.BuildScriptArgs, []string{"arg1", "arg 2"}) {
 		t.Errorf("%s wrong build script args %+v", context, config)
+	}
+
+	if config.TimeoutInSecs != 30 {
+		t.Errorf("%s wrong timeout in secs %+v", context, config)
 	}
 }
