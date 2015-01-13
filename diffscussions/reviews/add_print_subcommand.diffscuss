@@ -1,0 +1,160 @@
+#* 
+#* author: Edmund Jorgensen
+#* email: tomheon@gmail.com
+#* date: 2015-01-13T16:27:44-0500
+#* 
+#- Add print command for querying paths.
+#- 
+#- 
+diff --git a/main.go b/main.go
+index be2b8a9..8d3ccc7 100644
+--- a/main.go
++++ b/main.go
+@@ -11,31 +11,33 @@ func main() {
+ 
+ 	if len(os.Args) > 1 {
+ 		mode = os.Args[1]
+ 		if len(os.Args) > 2 {
+ 			os.Args = append(os.Args[:1], os.Args[2:]...)
+ 		} else {
+ 			os.Args = os.Args[0:1]
+ 		}
+ 	} else {
+ 		usage()
+ 	}
+ 
+ 	// Subcommands may override this.
+ 	log.SetOutput(os.Stderr)
+ 
+ 	switch mode {
+ 	case "build":
+ 		DoBuildCommand()
+ 	case "list":
+ 		DoListCommand()
++	case "print":
++		DoPrintCommand()
+ 	default:
+ 		usage()
+ 	}
+ }
+ 
+ func usage() {
+ 	fmt.Printf("Usage: kerouac {build, list}\n")
+ 	fmt.Printf("\n")
+ 	fmt.Printf("Use kerouac <subcommand> -h for help.\n")
+ 	os.Exit(1)
+ }
+diff --git a/printcmd.go b/printcmd.go
+new file mode 100644
+index 0000000..32b6959
+--- /dev/null
++++ b/printcmd.go
+@@ -0,0 +1,61 @@
++package main
++
++import (
++	"flag"
++	"fmt"
++	"log"
++	"os"
++)
++
++func DoPrintCommand() {
++	flag.Usage = func() {
++		fmt.Printf("Usage: kerouac print [options] <builddir|stdoutpath|stderrpath|kerouaclogpath|tarballpath> <kerouacRootDir> <project> <tag> [datetime]\n\n")
++		fmt.Printf("Prints to stdout the build directory, stdout log path, etc. of the specified build.\n\n")
++		fmt.Printf("If datetime is not specified, uses the latest build for the tag.\n")
++	}
++
++	flag.Parse()
++
++	if len(flag.Args()) < 4 || len(flag.Args()) > 5 {
++		flag.Usage()
++		os.Exit(1)
++	}
++
++	path := flag.Arg(0)
++	kerouacRoot := flag.Arg(1)
++	project := flag.Arg(2)
++	tag := flag.Arg(3)
++	var datetime string
++	if len(flag.Args()) == 5 {
++		datetime = flag.Arg(4)
++	}
++
++	buildIds, err := FindMatchingBuildIds(kerouacRoot, project, tag, datetime)
++
++	if err != nil {
++		log.Fatal(err)
++	}
++
++	if len(buildIds) == 0 {
++		os.Exit(1)
++	}
++
++	buildId := buildIds[len(buildIds)-1]
++
++	switch path {
++	case "builddir":
++		fmt.Print(FmtBuildDir(buildId))
++	case "stdoutpath":
++		fmt.Print(FmtStdoutLogPath(buildId))
++	case "stderrpath":
++		fmt.Print(FmtStderrLogPath(buildId))
++	case "kerouaclogpath":
++		fmt.Print(FmtKerouacLogPath(buildId))
++	case "tarballpath":
++		fmt.Print(FmtTarballPath(buildId))
++	default:
++		log.Printf("Did not recognize path to print: %s\n\n", path)
++		flag.Usage()
++		os.Exit(1)
++	}
++}
+diff --git a/records.go b/records.go
+index 52963fe..9108570 100644
+--- a/records.go
++++ b/records.go
+@@ -39,41 +39,41 @@ func MarkBuildSucceeded(buildId BuildId) error {
+ func FindMatchingBuildIds(rootDir string, project string, tag string, datetime string) ([]BuildId, error) {
+ 	query := "SELECT project, tag, started_at FROM builds WHERE 1 = 1"
+ 
+ 	args := make([]interface{}, 0, 0)
+ 
+ 	if project != "" {
+ 		query = query + " AND project = ?"
+ 		args = append(args, project)
+ 	}
+ 
+ 	if tag != "" {
+ 		query = query + " AND tag = ?"
+ 		args = append(args, tag)
+ 	}
+ 
+ 	if datetime != "" {
+ 		query = query + " AND started_at = ?"
+ 		args = append(args, datetime)
+ 	}
+ 
+-	query = query + ";"
++	query = query + " ORDER BY started_at DESC;"
+ 
+ 	conn, err := getConn(rootDir)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	defer conn.Close()
+ 
+ 	conn.Query(query, args...)
+ 
+ 	buildIds := make([]BuildId, 0, 0)
+ 
+ 	stmt, err := conn.Query(query, args...)
+ 
+ 	if err == io.EOF {
+ 		return buildIds, nil
+ 	} else if err != nil {
+ 		return nil, err
+ 	}
+ 
+ 	for {
