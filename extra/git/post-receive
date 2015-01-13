@@ -60,6 +60,7 @@ fi
 
 function create_build_file {
     echo_build
+    echo_log_output
     echo_notification
     # Note that the bash file doing the build cleans up itself and the log file
     # it references.
@@ -68,7 +69,6 @@ function create_build_file {
 
 function echo_build {
     echo "$KEROUAC build $TMP_BUILD_DIR $TMP_BUILD_DIR/$KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT $TAG" >> $BUILD_FILE
-
     echo 'if [ $? != "0" ]; then STATUS=FAILED; else STATUS=SUCCEEDED; fi' >> $BUILD_FILE
 }
 
@@ -92,8 +92,6 @@ function echo_cleanup {
 }
 
 function echo_notification {
-    echo_log_output
-
     if [ "$MAIL_TO" != "" ]
     then
         if [ $NOTIFY_ON == "FAILURE" ] || [ $NOTIFY_ON == "ALL" ]
