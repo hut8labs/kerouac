@@ -79,6 +79,7 @@ do
     TO=${SEGS[1]}
     REF=${SEGS[2]}
     BRANCH=$(basename $REF)
+    TAG=${BRANCH}@${TO}
 
     TMP_BUILD_DIR="$KEROUAC_WORK_DIR/${PROJECT}-${BRANCH}-${TO}"
 
@@ -96,24 +97,35 @@ do
 
     # Construct a bash script to be run in batch.
 
-    echo "$KEROUAC build $TMP_BUILD_DIR $TMP_BUILD_DIR/$KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT ${BRANCH}@${TO}" >> $BUILD_FILE
+    echo "$KEROUAC build $TMP_BUILD_DIR $TMP_BUILD_DIR/$KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT $TAG" >> $BUILD_FILE
 
     echo 'if [ $? != "0" ]; then STATUS=FAILED; else STATUS=SUCCEEDED; fi' >> $BUILD_FILE
-    echo 'echo $STATUS' >> $BUILD_FILE
+
+    echo "echo >> $LOG_FILE" >> $BUILD_FILE
+    echo "echo 'Kerouac log output:' >> $LOG_FILE" >> $BUILD_FILE
+    echo "cat \$($KEROUAC print kerouaclogpath $KEROUAC_ROOT $PROJECT $TAG) >> $LOG_FILE" >> $BUILD_FILE
+
+    echo "echo >> $LOG_FILE" >> $BUILD_FILE
+    echo "echo 'Build stdout:' >> $LOG_FILE" >> $BUILD_FILE
+    echo "cat \$($KEROUAC print stdoutpath $KEROUAC_ROOT $PROJECT $TAG) >> $LOG_FILE" >> $BUILD_FILE
+
+    echo "echo >> $LOG_FILE" >> $BUILD_FILE
+    echo "echo 'Build stderr:' >> $LOG_FILE" >> $BUILD_FILE
+    echo "cat \$($KEROUAC print stderrpath $KEROUAC_ROOT $PROJECT $TAG) >> $LOG_FILE" >> $BUILD_FILE
 
     if [ "$MAIL_TO" != "" ]
     then
         if [ $NOTIFY_ON == "FAILURE" ] || [ $NOTIFY_ON == "ALL" ]
         then
             echo 'if [ $STATUS == "FAILED" ]; then' >> $BUILD_FILE
-            echo "cat $LOG_FILE | $MAIL_CMD -s 'Build ${BRANCH}@${TO} failed' $MAIL_TO" >> $BUILD_FILE
+            echo "cat $LOG_FILE | $MAIL_CMD -s 'Build $TAG failed' $MAIL_TO" >> $BUILD_FILE
             echo 'fi' >> $BUILD_FILE
         fi
 
         if [ $NOTIFY_ON == "ALL" ]
         then
             echo 'if [ $STATUS == "SUCCEEDED" ]; then' >> $BUILD_FILE
-            echo "cat $LOG_FILE | $MAIL_CMD -s 'Build ${BRANCH}@${TO} succeeded' $MAIL_TO" >> $BUILD_FILE
+            echo "cat $LOG_FILE | $MAIL_CMD -s 'Build $TAG succeeded' $MAIL_TO" >> $BUILD_FILE
             echo 'fi' >> $BUILD_FILE
         fi
     fi
@@ -122,8 +134,6 @@ do
     # it references.
     echo "rm $LOG_FILE" >> $BUILD_FILE
     echo "rm $BUILD_FILE" >> $BUILD_FILE
-
-    # TODO add the output from the build
 
     echo "$BASH $BUILD_FILE" | $BATCH
 done
