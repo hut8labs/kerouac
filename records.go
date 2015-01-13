@@ -56,7 +56,7 @@ func FindMatchingBuildIds(rootDir string, project string, tag string, datetime s
 		args = append(args, datetime)
 	}
 
-	query = query + ";"
+	query = query + " ORDER BY started_at DESC;"
 
 	conn, err := getConn(rootDir)
 	if err != nil {

@@ -28,6 +28,8 @@ func main() {
 		DoBuildCommand()
 	case "list":
 		DoListCommand()
+	case "print":
+		DoPrintCommand()
 	default:
 		usage()
 	}
