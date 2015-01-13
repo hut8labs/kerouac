@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+
+##############################################################################
+# Variables requiring your customization (will also pick up variables set in #
+# the environment)                                                           #
+##############################################################################
+
+KEROUAC_WORK_DIR=${KEROUAC_WORK_DIR:-""}
+KEROUAC_ROOT=${KEROUAC_ROOT:-""}
+KEROUAC=${KEROUAC:-""}
+
+################################################################################
+# Variables you may wish / need to customize (will prefer variables set in the #
+# environment)                                                                 #
+################################################################################
+
+MAIL_TO=${MAIL_TO:-""}
+# MAIL_TO="person1@example.com person2@example.com"
+
+MAIL_CMD=${MAIL_CMD:-"/usr/bin/env mail"}
+
+NOTIFY_ON=${NOTIFY_ON:-"FAILURE"}
+# NOTIFY_ON="ALL"
+
+KEROUAC_CONFIG_NAME=${KEROUAC_CONFIG_NAME:-"kerouac.json"}
+
+BATCH=${BATCH:-"/usr/bin/env batch"}
+
+BASH=${BASH:-"/usr/bin/env bash"}
+
+GIT=${GIT:-"/usr/bin/env git"}
+
+GIT_LOG_CMD=${GIT_LOG_CMD:-"log --name-status -n1"}
+
+#############################
+# Verify required variables #
+#############################
+
+if [ -z "$KEROUAC_WORK_DIR" ]
+then
+    echo "Please edit hook / env to set KEROUAC_WORK_DIR"
+    exit 1
+fi
+
+if [ -z "$KEROUAC_ROOT" ]
+then
+    echo "Please edit hook / env to set KEROUAC_ROOT"
+    exit 1
+fi
+
+if [ -z "$KEROUAC" ]
+then
+    echo "Please edit hook / env to set KEROUAC"
+    exit 1
+fi
+
+################################
+# Begin actual hook processing #
+################################
+
+# This assume a normal git hook execution from the root of the git dir.
+PROJECT=$(basename $(pwd))
+
+mkdir -p $KEROUAC_WORK_DIR
+
+HOLD_GIT_DIR="$GIT_DIR"
+BASE_DIR=$(pwd)
+
+# TODO: allow only the last "to" pushed per ref to be built
+
+while read LINE
+do
+    # Just in case of error earlier
+    cd "$BASE_DIR"
+    export GIT_DIR="$HOLD_GIT_DIR"
+
+    SEGS=( $LINE )
+    FROM=${SEGS[0]}
+    TO=${SEGS[1]}
+    REF=${SEGS[2]}
+    BRANCH=$(basename $REF)
+
+    TMP_BUILD_DIR="$KEROUAC_WORK_DIR/${PROJECT}-${BRANCH}-${TO}"
+
+    $GIT clone $(pwd) $TMP_BUILD_DIR
+    cd $TMP_BUILD_DIR
+    unset GIT_DIR
+    $GIT checkout $BRANCH
+    echo "reset"
+    $GIT reset --hard $TO
+
+    BUILD_FILE=$(mktemp)
+    LOG_FILE=$(mktemp)
+
+    $GIT $GIT_LOG_CMD $TO > $LOG_FILE
+
+    # Construct a bash script to be run in batch.
+
+    echo "$KEROUAC $TMP_BUILD_DIR $TMP_BUILD_DIR/$KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT ${BRANCH}@${TO}" >> $BUILD_FILE
+
+    echo 'if [ $? != "0" ]; then STATUS=FAILED; else STATUS=SUCCEEDED; fi' >> $BUILD_FILE
+    echo 'echo $STATUS' >> $BUILD_FILE
+
+    if [ "$MAIL_TO" != "" ]
+    then
+        if [ $NOTIFY_ON == "FAILURE" ] || [ $NOTIFY_ON == "ALL" ]
+        then
+            echo 'if [ $STATUS == "FAILED" ]; then' >> $BUILD_FILE
+            echo "cat $LOG_FILE | $MAIL_CMD -s 'Build ${BRANCH}@${TO} failed' $MAIL_TO" >> $BUILD_FILE
+            echo 'fi' >> $BUILD_FILE
+        fi
+
+        if [ $NOTIFY_ON == "ALL" ]
+        then
+            echo 'if [ $STATUS == "SUCCEEDED" ]; then' >> $BUILD_FILE
+            echo "cat $LOG_FILE | $MAIL_CMD -s 'Build ${BRANCH}@${TO} succeeded' $MAIL_TO" >> $BUILD_FILE
+            echo 'fi' >> $BUILD_FILE
+        fi
+    fi
+
+    # Note that the bash file doing the build cleans up itself and the log file
+    # it references.
+    echo "rm $LOG_FILE" >> $BUILD_FILE
+    echo "rm $BUILD_FILE" >> $BUILD_FILE
+
+    # TODO add the output from the build
+
+    echo "$BASH $BUILD_FILE" | $BATCH
+done
