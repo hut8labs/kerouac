@@ -2,6 +2,8 @@ package main
 
 import (
 	"code.google.com/p/go-sqlite/go1/sqlite3"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -46,6 +48,7 @@ func updateBuildStatus(buildId BuildId, status string) error {
 
 func getConn(buildId BuildId) (*sqlite3.Conn, error) {
 	buildDbPath := FmtBuildDbPath(buildId.RootDir)
+	os.MkdirAll(filepath.Dir(buildDbPath), 0700)
 	return sqlite3.Open(buildDbPath)
 }
 
