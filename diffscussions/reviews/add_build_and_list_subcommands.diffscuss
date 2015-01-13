@@ -1,0 +1,682 @@
+#* 
+#* author: Edmund Jorgensen
+#* email: tomheon@gmail.com
+#* date: 2015-01-13T16:12:32-0500
+#* 
+#- Move build to build subcommand, add list.
+#- 
+#- 
+diff --git a/build.go b/build.go
+index b128efa..7c8f2e3 100644
+--- a/build.go
++++ b/build.go
+@@ -1,41 +1,44 @@
+ package main
+ 
+ import (
+ 	"fmt"
+ 	"log"
+ 	"os"
+ 	"os/exec"
+ 	"time"
+ )
+ 
+ // Represents the full identification for a build, including the kerouac root,
+ // the project, the build tag, and the datetime.
+ type BuildId struct {
+ 	RootDir  string
+ 	Project  string
+ 	Tag      string
+ 	DateTime time.Time
+ }
+ 
+ func BuildIdAtNow(rootDir string, project string, tag string) BuildId {
+-	dateTime := time.Now().UTC()
++	return BuildIdAt(rootDir, project, tag, time.Now().UTC())
++}
++
++func BuildIdAt(rootDir string, project string, tag string, dateTime time.Time) BuildId {
+ 	return BuildId{RootDir: rootDir, Project: project, Tag: tag, DateTime: dateTime}
+ }
+ 
+ // Contains paths to files containing stdout and stderr from the build process.
+ type BuildOutput struct {
+ 	StdoutPath string
+ 	StderrPath string
+ }
+ 
+ // Run the supplied build script, after changing directory to buildDir.
+ //
+ // The script's stdout and stderr will be captured and written to the
+ // appropriate directory under kerouacResultsRootDir (see dirs.go for more).
+ func RunBuildScript(buildDir string, buildScript string, buildScriptArgs []string, timeoutInSecs int, buildId BuildId) (*BuildOutput, error) {
+ 	cmd := exec.Command(buildScript, buildScriptArgs...)
+ 	cmd.Dir = buildDir
+ 
+ 	stdoutPath := FmtStdoutLogPath(buildId)
+ 	stderrPath := FmtStderrLogPath(buildId)
+ 
+diff --git a/buildcmd.go b/buildcmd.go
+new file mode 100644
+index 0000000..2ca2d93
+--- /dev/null
++++ b/buildcmd.go
+@@ -0,0 +1,172 @@
++package main
++
++import (
++	"flag"
++	"fmt"
++	"io"
++	"log"
++	"os"
++)
++
++var dryRun = flag.Bool("dry-run", false, "Print the commands that would be run.")
++
++var noRemoveSrcDir = flag.Bool("no-remove-src", false, "Do not remove the source dir after building.")
++
++// We expect 5 arguments on the command line
++const NumArgs = 5
++
++func DoBuildCommand() {
++	flag.Usage = func() {
++		fmt.Printf("Usage: kerouac build [options] <srcDir> <configFile> <kerouacRootDir> <project> <tag>\n\n")
++		flag.PrintDefaults()
++	}
++
++	flag.Parse()
++
++	if len(flag.Args()) != NumArgs {
++		// TODO: need to make the usage describe the args
++		flag.Usage()
++		os.Exit(1)
++	}
++
++	srcDir := flag.Arg(0)
++	configFile := flag.Arg(1)
++	rootDir := flag.Arg(2)
++	project := flag.Arg(3)
++	tag := flag.Arg(4)
++
++	buildId := BuildIdAtNow(rootDir, project, tag)
++
++	log.SetOutput(os.Stderr)
++	if *dryRun {
++		log.Printf("Dry run, will print actions but not take them.")
++	}
++
++	createBuildRecord(buildId)
++
++	logFile := configureLogging(buildId)
++	defer logFile.Close()
++
++	logStart(buildId)
++
++	config, err := ParseConfigFile(configFile)
++	if err != nil {
++		logAndDie(fmt.Sprintf("Error parsing config file: %s", err), buildId)
++	}
++
++	buildSuceeded := runBuild(srcDir, config, buildId)
++	createTarball(srcDir, buildId)
++	removeSrcDir(srcDir)
++
++	// TODO clean up old builds unless told not to
++
++	// TODO update the html
++
++	if buildSuceeded {
++		os.Exit(0)
++	} else {
++		os.Exit(1)
++	}
++
++}
++
++func logAndDie(msg string, buildId BuildId) {
++	if err := MarkBuildFailed(buildId); err != nil {
++		log.Printf("Could not mark build failed in db: %s", err)
++	}
++	log.Fatalf(msg)
++}
++
++func createBuildRecord(buildId BuildId) {
++	log.Printf("Creating db record for build.")
++
++	if !*dryRun {
++		if err := CreateBuildRecord(buildId); err != nil {
++			log.Fatalf("Could not create build record: %s", err)
++		}
++	}
++}
++
++func removeSrcDir(srcDir string) {
++	if *noRemoveSrcDir {
++		log.Printf("Not removing source dir due to --no-remove-src.")
++	} else {
++		log.Printf("Removing source dir %s", srcDir)
++		if !*dryRun {
++			os.RemoveAll(srcDir)
++		}
++	}
++}
++
++func createTarball(srcDir string, buildId BuildId) {
++	log.Printf("Tarballing %s into %s", srcDir, FmtTarballPath(buildId))
++
++	if !*dryRun {
++		if err := CreateTarball(srcDir, buildId); err != nil {
++			logAndDie(fmt.Sprintf("Error creating tarball: %s", err), buildId)
++		}
++	}
++}
++
++func runBuild(srcDir string, config *Config, buildId BuildId) bool {
++	log.Printf("Running build in dir %s with script %s and args %s", srcDir, config.BuildScript, config.BuildScriptArgs)
++
++	succeeded := false
++
++	if !*dryRun {
++		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, config.TimeoutInSecs, buildId)
++
++		if err != nil {
++			log.Printf("Completed build with error: %s", err)
++			MarkBuildFailed(buildId)
++		} else {
++			log.Printf("Completed build successfully.")
++			MarkBuildSucceeded(buildId)
++			succeeded = true
++		}
++
++		log.Printf("Build script stdout in: %s", buildOutput.StdoutPath)
++		log.Printf("Build scrip stderr in: %s", buildOutput.StderrPath)
++	}
++
++	return succeeded
++}
++
++func configureLogging(buildId BuildId) *os.File {
++	logsDir := FmtLogsDir(buildId)
++
++	log.Printf("Creating logs dir %s with perms 0700", logsDir)
++
++	if !*dryRun {
++		// TODO: reconsider permissions
++		os.MkdirAll(logsDir, 0700)
++	}
++
++	logPath := FmtKerouacLogPath(buildId)
++
++	log.Printf("Creating log at %s", logPath)
++
++	var logFile *os.File
++	var err error
++
++	if !*dryRun {
++		logFile, err = os.Create(logPath)
++		if err != nil {
++			log.Fatalf("Logging ironic error, could not configure logging: %s", err)
++		}
++	}
++
++	log.Printf("Teeing log output to %s and stderr", logPath)
++
++	if !*dryRun {
++		writer := io.MultiWriter(os.Stderr, logFile)
++		log.SetOutput(writer)
++	}
++
++	return logFile
++}
++
++func logStart(buildId BuildId) {
++	log.Printf("Starting build of %s with tag %s at %s", buildId.Project, buildId.Tag, buildId.DateTime.Format("2006-01-02 15:04:05 (MST)"))
++	log.Printf("Build dir is %s", FmtBuildDir(buildId))
++}
+diff --git a/extra/git/post-receive b/extra/git/post-receive
+index f34d003..626a7e4 100755
+--- a/extra/git/post-receive
++++ b/extra/git/post-receive
+@@ -79,41 +79,41 @@ do
+     TO=${SEGS[1]}
+     REF=${SEGS[2]}
+     BRANCH=$(basename $REF)
+ 
+     TMP_BUILD_DIR="$KEROUAC_WORK_DIR/${PROJECT}-${BRANCH}-${TO}"
+ 
+     $GIT clone $(pwd) $TMP_BUILD_DIR
+     cd $TMP_BUILD_DIR
+     unset GIT_DIR
+     $GIT checkout $BRANCH
+     echo "reset"
+     $GIT reset --hard $TO
+ 
+     BUILD_FILE=$(mktemp)
+     LOG_FILE=$(mktemp)
+ 
+     $GIT $GIT_LOG_CMD $TO > $LOG_FILE
+ 
+     # Construct a bash script to be run in batch.
+ 
+-    echo "$KEROUAC $TMP_BUILD_DIR $TMP_BUILD_DIR/$KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT ${BRANCH}@${TO}" >> $BUILD_FILE
++    echo "$KEROUAC build $TMP_BUILD_DIR $TMP_BUILD_DIR/$KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT ${BRANCH}@${TO}" >> $BUILD_FILE
+ 
+     echo 'if [ $? != "0" ]; then STATUS=FAILED; else STATUS=SUCCEEDED; fi' >> $BUILD_FILE
+     echo 'echo $STATUS' >> $BUILD_FILE
+ 
+     if [ "$MAIL_TO" != "" ]
+     then
+         if [ $NOTIFY_ON == "FAILURE" ] || [ $NOTIFY_ON == "ALL" ]
+         then
+             echo 'if [ $STATUS == "FAILED" ]; then' >> $BUILD_FILE
+             echo "cat $LOG_FILE | $MAIL_CMD -s 'Build ${BRANCH}@${TO} failed' $MAIL_TO" >> $BUILD_FILE
+             echo 'fi' >> $BUILD_FILE
+         fi
+ 
+         if [ $NOTIFY_ON == "ALL" ]
+         then
+             echo 'if [ $STATUS == "SUCCEEDED" ]; then' >> $BUILD_FILE
+             echo "cat $LOG_FILE | $MAIL_CMD -s 'Build ${BRANCH}@${TO} succeeded' $MAIL_TO" >> $BUILD_FILE
+             echo 'fi' >> $BUILD_FILE
+         fi
+     fi
+diff --git a/listcmd.go b/listcmd.go
+new file mode 100644
+index 0000000..c8b720d
+--- /dev/null
++++ b/listcmd.go
+@@ -0,0 +1,50 @@
++package main
++
++import (
++	"flag"
++	"fmt"
++	"log"
++	"os"
++)
++
++func DoListCommand() {
++	flag.Usage = func() {
++		fmt.Printf("Usage: kerouac list [options] <kerouacRootDir> [project] [tag] [datetime]\n\n")
++		fmt.Printf("Prints to stdout the list of build directories matching the supplied criteria.\n\n")
++		fmt.Printf("Example: 'kerouac list' would list all builds.\n\n")
++		fmt.Printf("Example: 'kerouac list myproj' would list all builds for myproj.\n")
++	}
++
++	flag.Parse()
++
++	if len(flag.Args()) < 1 {
++		flag.Usage()
++		os.Exit(1)
++	}
++
++	kerouacRoot := flag.Arg(0)
++	var project, tag, datetime string
++
++	if len(flag.Args()) > 1 {
++		project = flag.Arg(1)
++	}
++
++	if len(flag.Args()) > 2 {
++		tag = flag.Arg(2)
++	}
++
++	if len(flag.Args()) > 3 {
++		datetime = flag.Arg(3)
++	}
++
++	buildIds, err := FindMatchingBuildIds(kerouacRoot, project, tag, datetime)
++
++	if err != nil {
++		log.Fatalf("Error finding builds: %s", err)
++	}
++
++	for _, buildId := range buildIds {
++		fmt.Printf("%s\n", FmtBuildDir(buildId))
++	}
++
++}
+diff --git a/main.go b/main.go
+index 02477b3..be2b8a9 100644
+--- a/main.go
++++ b/main.go
+@@ -1,166 +1,41 @@
+ package main
+ 
+ import (
+-	"flag"
+ 	"fmt"
+-	"io"
+ 	"log"
+ 	"os"
+ )
+ 
+-var dryRun = flag.Bool("dry-run", false, "Print the commands that would be run.")
+-
+-var noRemoveSrcDir = flag.Bool("no-remove-src", false, "Do not remove the source dir after building.")
+-
+-// We expect 5 arguments on the command line
+-const NumArgs = 5
+-
+ func main() {
+-	flag.Parse()
+-
+-	if len(flag.Args()) != NumArgs {
+-		// TODO: need to make the usage describe the args
+-		flag.Usage()
+-		os.Exit(1)
+-	}
+-
+-	srcDir := flag.Arg(0)
+-	configFile := flag.Arg(1)
+-	rootDir := flag.Arg(2)
+-	project := flag.Arg(3)
+-	tag := flag.Arg(4)
+-
+-	buildId := BuildIdAtNow(rootDir, project, tag)
+-
+-	log.SetOutput(os.Stderr)
+-	if *dryRun {
+-		log.Printf("Dry run, will print actions but not take them.")
+-	}
+-
+-	createBuildRecord(buildId)
+-
+-	logFile := configureLogging(buildId)
+-	defer logFile.Close()
+-
+-	logStart(buildId)
+-
+-	config, err := ParseConfigFile(configFile)
+-	if err != nil {
+-		logAndDie(fmt.Sprintf("Error parsing config file: %s", err), buildId)
+-	}
+-
+-	buildSuceeded := runBuild(srcDir, config, buildId)
+-	createTarball(srcDir, buildId)
+-	removeSrcDir(srcDir)
+-
+-	// TODO clean up old builds unless told not to
+-
+-	// TODO update the html
+-
+-	if buildSuceeded {
+-		os.Exit(0)
+-	} else {
+-		os.Exit(1)
+-	}
+-}
+-
+-func logAndDie(msg string, buildId BuildId) {
+-	if err := MarkBuildFailed(buildId); err != nil {
+-		log.Printf("Could not mark build failed in db: %s", err)
+-	}
+-	log.Fatalf(msg)
+-}
+-
+-func createBuildRecord(buildId BuildId) {
+-	log.Printf("Creating db record for build.")
+-
+-	if !*dryRun {
+-		if err := CreateBuildRecord(buildId); err != nil {
+-			log.Fatalf("Could not create build record: %s", err)
+-		}
+-	}
+-}
++	mode := ""
+ 
+-func removeSrcDir(srcDir string) {
+-	if *noRemoveSrcDir {
+-		log.Printf("Not removing source dir due to --no-remove-src.")
+-	} else {
+-		log.Printf("Removing source dir %s", srcDir)
+-		if !*dryRun {
+-			os.RemoveAll(srcDir)
+-		}
+-	}
+-}
+-
+-func createTarball(srcDir string, buildId BuildId) {
+-	log.Printf("Tarballing %s into %s", srcDir, FmtTarballPath(buildId))
+-
+-	if !*dryRun {
+-		if err := CreateTarball(srcDir, buildId); err != nil {
+-			logAndDie(fmt.Sprintf("Error creating tarball: %s", err), buildId)
+-		}
+-	}
+-}
+-
+-func runBuild(srcDir string, config *Config, buildId BuildId) bool {
+-	log.Printf("Running build in dir %s with script %s and args %s", srcDir, config.BuildScript, config.BuildScriptArgs)
+-
+-	succeeded := false
+-
+-	if !*dryRun {
+-		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, config.TimeoutInSecs, buildId)
+-
+-		if err != nil {
+-			log.Printf("Completed build with error: %s", err)
+-			MarkBuildFailed(buildId)
++	if len(os.Args) > 1 {
++		mode = os.Args[1]
++		if len(os.Args) > 2 {
++			os.Args = append(os.Args[:1], os.Args[2:]...)
+ 		} else {
+-			log.Printf("Completed build successfully.")
+-			MarkBuildSucceeded(buildId)
+-			succeeded = true
+-		}
+-
+-		log.Printf("Build script stdout in: %s", buildOutput.StdoutPath)
+-		log.Printf("Build scrip stderr in: %s", buildOutput.StderrPath)
+-	}
+-
+-	return succeeded
+-}
+-
+-func configureLogging(buildId BuildId) *os.File {
+-	logsDir := FmtLogsDir(buildId)
+-
+-	log.Printf("Creating logs dir %s with perms 0700", logsDir)
+-
+-	if !*dryRun {
+-		// TODO: reconsider permissions
+-		os.MkdirAll(logsDir, 0700)
+-	}
+-
+-	logPath := FmtKerouacLogPath(buildId)
+-
+-	log.Printf("Creating log at %s", logPath)
+-
+-	var logFile *os.File
+-	var err error
+-
+-	if !*dryRun {
+-		logFile, err = os.Create(logPath)
+-		if err != nil {
+-			log.Fatalf("Logging ironic error, could not configure logging: %s", err)
++			os.Args = os.Args[0:1]
+ 		}
++	} else {
++		usage()
+ 	}
+ 
+-	log.Printf("Teeing log output to %s and stderr", logPath)
++	// Subcommands may override this.
++	log.SetOutput(os.Stderr)
+ 
+-	if !*dryRun {
+-		writer := io.MultiWriter(os.Stderr, logFile)
+-		log.SetOutput(writer)
++	switch mode {
++	case "build":
++		DoBuildCommand()
++	case "list":
++		DoListCommand()
++	default:
++		usage()
+ 	}
+-
+-	return logFile
+ }
+ 
+-func logStart(buildId BuildId) {
+-	log.Printf("Starting build of %s with tag %s at %s", buildId.Project, buildId.Tag, buildId.DateTime.Format("2006-01-02 15:04:05 (MST)"))
+-	log.Printf("Build dir is %s", FmtBuildDir(buildId))
++func usage() {
++	fmt.Printf("Usage: kerouac {build, list}\n")
++	fmt.Printf("\n")
++	fmt.Printf("Use kerouac <subcommand> -h for help.\n")
++	os.Exit(1)
+ }
+diff --git a/records.go b/records.go
+index 801dc28..52963fe 100644
+--- a/records.go
++++ b/records.go
+@@ -1,70 +1,141 @@
+ package main
+ 
+ import (
+ 	"code.google.com/p/go-sqlite/go1/sqlite3"
++	"io"
+ 	"os"
+ 	"path/filepath"
+ 	"time"
+ )
+ 
+ func CreateBuildRecord(buildId BuildId) error {
+-	conn, err := getConn(buildId)
++	conn, err := getConn(buildId.RootDir)
+ 	if err != nil {
+ 		return err
+ 	}
+ 	defer conn.Close()
+ 
+ 	if err = createTablesAndIndexes(conn); err != nil {
+ 		return err
+ 	}
+ 
+ 	if err = insertBuildRecord(conn, buildId); err != nil {
+ 		return err
+ 	}
+ 
+ 	return nil
+ }
+ 
+ const DateFormat = "2006-01-02 15:04:05"
+ 
+ func MarkBuildFailed(buildId BuildId) error {
+ 	return updateBuildStatus(buildId, "FAILED")
+ }
+ 
+ func MarkBuildSucceeded(buildId BuildId) error {
+ 	return updateBuildStatus(buildId, "SUCCEDED")
+ }
+ 
++func FindMatchingBuildIds(rootDir string, project string, tag string, datetime string) ([]BuildId, error) {
++	query := "SELECT project, tag, started_at FROM builds WHERE 1 = 1"
++
++	args := make([]interface{}, 0, 0)
++
++	if project != "" {
++		query = query + " AND project = ?"
++		args = append(args, project)
++	}
++
++	if tag != "" {
++		query = query + " AND tag = ?"
++		args = append(args, tag)
++	}
++
++	if datetime != "" {
++		query = query + " AND started_at = ?"
++		args = append(args, datetime)
++	}
++
++	query = query + ";"
++
++	conn, err := getConn(rootDir)
++	if err != nil {
++		return nil, err
++	}
++	defer conn.Close()
++
++	conn.Query(query, args...)
++
++	buildIds := make([]BuildId, 0, 0)
++
++	stmt, err := conn.Query(query, args...)
++
++	if err == io.EOF {
++		return buildIds, nil
++	} else if err != nil {
++		return nil, err
++	}
++
++	for {
++		buildId, err := scanBuildId(rootDir, stmt)
++		if err != nil {
++			return nil, err
++		}
++		buildIds = append(buildIds, buildId)
++		if err = stmt.Next(); err == io.EOF {
++			break
++		} else if err != nil {
++			return nil, err
++		}
++	}
++
++	return buildIds, nil
++}
++
++func scanBuildId(rootDir string, stmt *sqlite3.Stmt) (BuildId, error) {
++	var rowProject, rowTag, rowDatetime string
++	err := stmt.Scan(&rowProject, &rowTag, &rowDatetime)
++	if err != nil {
++		return BuildId{}, err
++	}
++
++	dateTime, err := time.Parse(DateFormat, rowDatetime)
++	if err != nil {
++		return BuildId{}, err
++	}
++	return BuildIdAt(rootDir, rowProject, rowTag, dateTime), nil
++}
++
+ func updateBuildStatus(buildId BuildId, status string) error {
+-	conn, err := getConn(buildId)
++	conn, err := getConn(buildId.RootDir)
+ 	if err != nil {
+ 		return err
+ 	}
+ 	defer conn.Close()
+ 
+ 	return conn.Exec("UPDATE builds SET status = ?, finished_at = ? WHERE project = ? AND tag = ? AND started_at = ?", status, time.Now().UTC().Format(DateFormat), buildId.Project, buildId.Tag, buildId.DateTime.Format(DateFormat))
+ 
+ }
+ 
+-func getConn(buildId BuildId) (*sqlite3.Conn, error) {
+-	buildDbPath := FmtBuildDbPath(buildId.RootDir)
++func getConn(rootDir string) (*sqlite3.Conn, error) {
++	buildDbPath := FmtBuildDbPath(rootDir)
+ 	os.MkdirAll(filepath.Dir(buildDbPath), 0700)
+ 	return sqlite3.Open(buildDbPath)
+ }
+ 
+ const createBuildsTable = "CREATE TABLE IF NOT EXISTS builds (id INTEGER PRIMARYKEY ASC, project TEXT NOT NULL, tag TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, status TEXT)"
+ 
+ const createBuildsUniqueIdx = "CREATE UNIQUE INDEX IF NOT EXISTS builds_idx ON builds (project, tag, started_at)"
+ 
+ func createTablesAndIndexes(conn *sqlite3.Conn) error {
+ 	stmts := []string{createBuildsTable, createBuildsUniqueIdx}
+ 
+ 	for _, stmt := range stmts {
+ 		if err := conn.Exec(stmt); err != nil {
+ 			return err
+ 		}
+ 	}
+ 
+ 	return nil
+ }
+ 
