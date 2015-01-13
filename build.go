@@ -18,7 +18,10 @@ type BuildId struct {
 }
 
 func BuildIdAtNow(rootDir string, project string, tag string) BuildId {
-	dateTime := time.Now().UTC()
+	return BuildIdAt(rootDir, project, tag, time.Now().UTC())
+}
+
+func BuildIdAt(rootDir string, project string, tag string, dateTime time.Time) BuildId {
 	return BuildId{RootDir: rootDir, Project: project, Tag: tag, DateTime: dateTime}
 }
 

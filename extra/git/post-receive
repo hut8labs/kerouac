@@ -96,7 +96,7 @@ do
 
     # Construct a bash script to be run in batch.
 
-    echo "$KEROUAC $TMP_BUILD_DIR $TMP_BUILD_DIR/$KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT ${BRANCH}@${TO}" >> $BUILD_FILE
+    echo "$KEROUAC build $TMP_BUILD_DIR $TMP_BUILD_DIR/$KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT ${BRANCH}@${TO}" >> $BUILD_FILE
 
     echo 'if [ $? != "0" ]; then STATUS=FAILED; else STATUS=SUCCEEDED; fi' >> $BUILD_FILE
     echo 'echo $STATUS' >> $BUILD_FILE
