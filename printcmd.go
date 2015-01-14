@@ -30,29 +30,27 @@ func DoPrintCommand() {
 		datetime = flag.Arg(4)
 	}
 
-	buildIds, err := FindMatchingBuildIds(kerouacRoot, project, tag, datetime)
+	buildId, err := FindLatestBuildId(kerouacRoot, project, tag, datetime)
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if len(buildIds) == 0 {
+	if buildId == nil {
 		os.Exit(1)
 	}
 
-	buildId := buildIds[len(buildIds)-1]
-
 	switch path {
 	case "builddir":
-		fmt.Print(FmtBuildDir(buildId))
+		fmt.Print(FmtBuildDir(*buildId))
 	case "stdoutpath":
-		fmt.Print(FmtStdoutLogPath(buildId))
+		fmt.Print(FmtStdoutLogPath(*buildId))
 	case "stderrpath":
-		fmt.Print(FmtStderrLogPath(buildId))
+		fmt.Print(FmtStderrLogPath(*buildId))
 	case "kerouaclogpath":
-		fmt.Print(FmtKerouacLogPath(buildId))
+		fmt.Print(FmtKerouacLogPath(*buildId))
 	case "tarballpath":
-		fmt.Print(FmtTarballPath(buildId))
+		fmt.Print(FmtTarballPath(*buildId))
 	default:
 		log.Printf("Did not recognize path to print: %s\n\n", path)
 		flag.Usage()

@@ -92,6 +92,17 @@ func FindMatchingBuildIds(rootDir string, project string, tag string, datetime s
 	return buildIds, nil
 }
 
+func FindLatestBuildId(rootDir string, project string, tag string, datetime string) (*BuildId, error) {
+	buildIds, err := FindMatchingBuildIds(rootDir, project, tag, datetime)
+	if err != nil {
+		return nil, err
+	}
+	if len(buildIds) == 0 {
+		return nil, nil
+	}
+	return &buildIds[0], nil
+}
+
 func scanBuildId(rootDir string, stmt *sqlite3.Stmt) (BuildId, error) {
 	var rowProject, rowTag, rowDatetime string
 	err := stmt.Scan(&rowProject, &rowTag, &rowDatetime)
