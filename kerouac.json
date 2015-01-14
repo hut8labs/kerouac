@@ -1,5 +1,5 @@
 {
     "BuildScript": "./build.sh",
     "BuildScriptArgs": [],
-    "TimeoutInSecs": 60
+    "TimeoutInSecs": 120
 }
