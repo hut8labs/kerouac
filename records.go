@@ -2,6 +2,7 @@ package main
 
 import (
 	"code.google.com/p/go-sqlite/go1/sqlite3"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -101,6 +102,23 @@ func FindLatestBuildId(rootDir string, project string, tag string, datetime stri
 		return nil, nil
 	}
 	return &buildIds[0], nil
+}
+
+func FindBuildIdsGreaterThanN(rootDir string, project string, n int) ([]BuildId, error) {
+	if n < 0 {
+		return nil, fmt.Errorf("Cannot find builds greater than %d", n)
+	}
+
+	buildIds, err := FindMatchingBuildIds(rootDir, project, "", "")
+	if err != nil {
+		return buildIds, err
+	}
+
+	if n > len(buildIds) {
+		n = len(buildIds)
+	}
+
+	return buildIds[n:], nil
 }
 
 func scanBuildId(rootDir string, stmt *sqlite3.Stmt) (BuildId, error) {

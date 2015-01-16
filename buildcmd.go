@@ -58,16 +58,39 @@ func DoBuildCommand() {
 	createTarball(srcDir, buildId)
 	removeSrcDir(srcDir)
 
-	// TODO clean up old builds unless told not to
-
 	// TODO update the html
 
 	if buildSuceeded {
+		if err = cleanOldBuilds(buildId.RootDir, buildId.Project, config.NumBuildsToKeep); err != nil {
+			log.Printf("Warning, error trying to remove old builds: %s", err)
+		}
+
 		os.Exit(0)
 	} else {
 		os.Exit(1)
 	}
 
+}
+
+func cleanOldBuilds(rootDir string, project string, buildsToKeep int) error {
+	if buildsToKeep < 1 {
+		return fmt.Errorf("Refusing to keep < 1 build, not deleting any: %d", buildsToKeep)
+	}
+
+	buildIdsToRemove, err := FindBuildIdsGreaterThanN(rootDir, project, buildsToKeep)
+	if err != nil {
+		return err
+	}
+
+	for _, buildId := range buildIdsToRemove {
+		buildDir := FmtBuildDir(buildId)
+		log.Printf("Removing old build dir %s", buildDir)
+		if err = os.RemoveAll(buildDir); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func logAndDie(msg string, buildId BuildId) {
@@ -126,7 +149,7 @@ func runBuild(srcDir string, config *Config, buildId BuildId) bool {
 		}
 
 		log.Printf("Build script stdout in: %s", buildOutput.StdoutPath)
-		log.Printf("Build scrip stderr in: %s", buildOutput.StderrPath)
+		log.Printf("Build script stderr in: %s", buildOutput.StderrPath)
 	}
 
 	return succeeded
