@@ -36,7 +36,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Printf("Usage: kerouac {build, list}\n")
+	fmt.Printf("Usage: kerouac {build, list, print}\n")
 	fmt.Printf("\n")
 	fmt.Printf("Use kerouac <subcommand> -h for help.\n")
 	os.Exit(1)
