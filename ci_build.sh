@@ -72,10 +72,10 @@ if [ "$MAIL_TO" != "" ]
 then
     if [ $STATUS == "FAILED" ] && [ $NOTIFY_ON_FAILURE == "YES" ]
     then
-        cat $LOG_FILE | $MAIL_CMD -s 'Build $TAG failed' $MAIL_TO
+        cat $LOG_FILE | $MAIL_CMD 'Build $TAG failed' $MAIL_TO
     elif [ $NOTIFY_ON_SUCCESS == "YES" ]
     then
-        cat $LOG_FILE | $MAIL_CMD -s 'Build $TAG succeeded' $MAIL_TO
+        cat $LOG_FILE | $MAIL_CMD 'Build $TAG succeeded' $MAIL_TO
 
     fi
 fi
