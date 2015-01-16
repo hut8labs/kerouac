@@ -58,7 +58,7 @@ cat $($KEROUAC print kerouaclogpath $KEROUAC_ROOT $PROJECT $TAG) >> $LOG_FILE
 
 echo >> $LOG_FILE
 echo 'Build stdout:' >> $LOG_FILE
-echo cat $($KEROUAC print stdoutpath $KEROUAC_ROOT $PROJECT $TAG) >> $LOG_FILE
+cat $($KEROUAC print stdoutpath $KEROUAC_ROOT $PROJECT $TAG) >> $LOG_FILE
 
 echo >> $LOG_FILE
 echo 'Build stderr:' >> $LOG_FILE
@@ -72,10 +72,10 @@ if [ "$MAIL_TO" != "" ]
 then
     if [ $STATUS == "FAILED" ] && [ $NOTIFY_ON_FAILURE == "YES" ]
     then
-        cat $LOG_FILE | $MAIL_CMD 'Build $TAG failed' $MAIL_TO
+        cat $LOG_FILE | $MAIL_CMD "$PROJECT build $TAG failed" $MAIL_TO
     elif [ $NOTIFY_ON_SUCCESS == "YES" ]
     then
-        cat $LOG_FILE | $MAIL_CMD 'Build $TAG succeeded' $MAIL_TO
+        cat $LOG_FILE | $MAIL_CMD "$PROJECT build $TAG succeeded" $MAIL_TO
 
     fi
 fi
