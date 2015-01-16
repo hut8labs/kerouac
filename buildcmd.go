@@ -10,7 +10,7 @@ import (
 
 var dryRun = flag.Bool("dry-run", false, "Print the commands that would be run.")
 
-var noRemoveSrcDir = flag.Bool("no-remove-src", false, "Do not remove the source dir after building.")
+var removeSrcDir = flag.Bool("remove-src", false, "Remove the source dir after building.")
 
 // We expect 5 arguments on the command line
 const NumArgs = 5
@@ -56,7 +56,7 @@ func DoBuildCommand() {
 
 	buildSuceeded := runBuild(srcDir, config, buildId)
 	createTarball(srcDir, buildId)
-	removeSrcDir(srcDir)
+	maybeRemoveSrcDir(srcDir)
 
 	// TODO update the html
 
@@ -110,11 +110,11 @@ func createBuildRecord(buildId BuildId) {
 	}
 }
 
-func removeSrcDir(srcDir string) {
-	if *noRemoveSrcDir {
-		log.Printf("Not removing source dir due to --no-remove-src.")
+func maybeRemoveSrcDir(srcDir string) {
+	if !*removeSrcDir {
+		log.Printf("Not removing source dir.")
 	} else {
-		log.Printf("Removing source dir %s", srcDir)
+		log.Printf("Removing source dir due to --remove-src %s", srcDir)
 		if !*dryRun {
 			os.RemoveAll(srcDir)
 		}

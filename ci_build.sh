@@ -23,6 +23,8 @@ MAIL_CMD=${MAIL_CMD:-"/usr/bin/env mail -s"}
 # Where to find the kerouac configuration in the repo.
 KEROUAC_CONFIG_NAME=${KEROUAC_CONFIG_NAME:-"kerouac.json"}
 
+KEROUAC_BUILD_FLAGS="--remove-src"
+
 #############
 # Arguments #
 #############
@@ -37,7 +39,7 @@ LOG_FILE=$5
 # Actually run the build.     #
 ###############################
 
-$KEROUAC build . $KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT $TAG
+$KEROUAC build $KEROUAC_BUILD_FLAGS . $KEROUAC_CONFIG_NAME $KEROUAC_ROOT $PROJECT $TAG
 
 if [ $? != "0" ]
 then
