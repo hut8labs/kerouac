@@ -24,7 +24,6 @@ func DoBuildCommand() {
 	flag.Parse()
 
 	if len(flag.Args()) != NumArgs {
-		// TODO: need to make the usage describe the args
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -57,8 +56,6 @@ func DoBuildCommand() {
 	buildSuceeded := runBuild(srcDir, config, buildId)
 	createTarball(srcDir, buildId)
 	maybeRemoveSrcDir(srcDir)
-
-	// TODO update the html
 
 	if buildSuceeded {
 		if err = cleanOldBuilds(buildId.RootDir, buildId.Project, config.NumBuildsToKeep); err != nil {
