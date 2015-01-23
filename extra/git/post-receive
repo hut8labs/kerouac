@@ -71,25 +71,13 @@ do
 
     TMP_BUILD_DIR="$KEROUAC_WORK_DIR/${PROJECT}-${BRANCH}-${TO}"
 
-    $GIT clone $(pwd) $TMP_BUILD_DIR
-    cd $TMP_BUILD_DIR
-    unset GIT_DIR
-    $GIT checkout $BRANCH
-    $GIT reset --hard $TO
-
     LOG_FILE=$(mktemp)
 
     $GIT $GIT_LOG_CMD $FROM..$TO > $LOG_FILE
 
-    CI_COMMAND="$TMP_BUILD_DIR/$CI_SCRIPT"
-
-    if [ ! -x "$CI_COMMAND" ]
-    then
-        echo "ERROR: $CI_COMMAND does not exist or is not executable."
-        exit 1
-    fi
-
+    CI_COMMAND="cd $TMP_BUILD_DIR && $TMP_BUILD_DIR/$CI_SCRIPT"
+    SET_UP_COMMAND="$GIT clone $BASE_DIR $TMP_BUILD_DIR && cd $TMP_BUILD_DIR && unset GIT_DIR && $GIT checkout $BRANCH && $GIT reset --hard $TO"
     RUN_CI_COMMAND="$CI_COMMAND $KEROUAC $KEROUAC_ROOT $PROJECT $TAG $LOG_FILE"
 
-    echo "$RUN_CI_COMMAND" | $BATCH
+    echo "$SET_UP_COMMAND && $RUN_CI_COMMAND" | $BATCH
 done
