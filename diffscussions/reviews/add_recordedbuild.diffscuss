@@ -1,0 +1,487 @@
+#* 
+#* author: Matt Papi
+#* email: mmpapi@gmail.com
+#* date: 2015-01-24T15:19:51-0500
+#* 
+#- Add RecordedBuild; modify Find*() to return it.
+#- 
+#- This new struct represents a build that ran. It associates the result of
+#- build (success/failure) and an end time with a BuildId.
+#- 
+#- The Find*() functions return this now; since it embeds a *BuildId,
+#- callers of those functions don't change much.
+#- 
+#- This sets us up for rendering a status HTML page, and potentially for
+#- offering more info through the print/list commands.
+#- 
+#- 
+diff --git a/buildcmd.go b/buildcmd.go
+index 487f602..9d00668 100644
+--- a/buildcmd.go
++++ b/buildcmd.go
+@@ -57,47 +57,47 @@ func DoBuildCommand() {
+ 	createTarball(srcDir, buildId)
+ 	maybeRemoveSrcDir(srcDir)
+ 
+ 	if buildSuceeded {
+ 		if err = cleanOldBuilds(buildId.RootDir, buildId.Project, config.NumBuildsToKeep); err != nil {
+ 			log.Printf("Warning, error trying to remove old builds: %s", err)
+ 		}
+ 
+ 		os.Exit(0)
+ 	} else {
+ 		os.Exit(1)
+ 	}
+ 
+ }
+ 
+ func cleanOldBuilds(rootDir string, project string, buildsToKeep int) error {
+ 	if buildsToKeep < 1 {
+ 		return fmt.Errorf("Refusing to keep < 1 build, not deleting any: %d", buildsToKeep)
+ 	}
+ 
+-	buildIdsToRemove, err := FindBuildIdsGreaterThanN(rootDir, project, buildsToKeep)
++	buildsToRemove, err := FindBuildsGreaterThanN(rootDir, project, buildsToKeep)
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+-	for _, buildId := range buildIdsToRemove {
+-		buildDir := buildId.FmtBuildDir()
++	for _, recordedBuild := range buildsToRemove {
++		buildDir := recordedBuild.FmtBuildDir()
+ 		log.Printf("Removing old build dir %s", buildDir)
+ 		if err = os.RemoveAll(buildDir); err != nil {
+ 			return err
+ 		}
+ 	}
+ 
+ 	return nil
+ }
+ 
+ func logAndDie(msg string, buildId BuildId) {
+ 	if err := MarkBuildFailed(buildId); err != nil {
+ 		log.Printf("Could not mark build failed in db: %s", err)
+ 	}
+ 	log.Fatalf(msg)
+ }
+ 
+ func createBuildRecord(buildId BuildId) {
+ 	log.Printf("Creating db record for build.")
+ 
+ 	if !*dryRun {
+@@ -121,44 +121,48 @@ func maybeRemoveSrcDir(srcDir string) {
+ func createTarball(srcDir string, buildId BuildId) {
+ 	log.Printf("Tarballing %s into %s", srcDir, buildId.FmtTarballPath())
+ 
+ 	if !*dryRun {
+ 		if err := CreateTarball(srcDir, buildId); err != nil {
+ 			logAndDie(fmt.Sprintf("Error creating tarball: %s", err), buildId)
+ 		}
+ 	}
+ }
+ 
+ func runBuild(srcDir string, config *Config, buildId BuildId) bool {
+ 	log.Printf("Running build in dir %s with script %s and args %s", srcDir, config.BuildScript, config.BuildScriptArgs)
+ 
+ 	succeeded := false
+ 
+ 	if !*dryRun {
+ 		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, config.TimeoutInSecs, buildId)
+ 
+ 		if err != nil {
+ 			log.Printf("Completed build with error: %s", err)
+-			MarkBuildFailed(buildId)
++			if err := MarkBuildFailed(buildId); err != nil {
++				log.Printf("Warning, could not record build as failed: %s", err)
++			}
+ 		} else {
+ 			log.Printf("Completed build successfully.")
+-			MarkBuildSucceeded(buildId)
++			if err := MarkBuildSucceeded(buildId); err != nil {
++				log.Printf("Warning, could not record build as failed: %s", err)
++			}
+ 			succeeded = true
+ 		}
+ 
+ 		log.Printf("Build script stdout in: %s", buildOutput.StdoutPath)
+ 		log.Printf("Build script stderr in: %s", buildOutput.StderrPath)
+ 	}
+ 
+ 	return succeeded
+ }
+ 
+ func configureLogging(buildId BuildId) *os.File {
+ 	logsDir := buildId.FmtLogsDir()
+ 
+ 	log.Printf("Creating logs dir %s with perms 0700", logsDir)
+ 
+ 	if !*dryRun {
+ 		// TODO: reconsider permissions
+ 		os.MkdirAll(logsDir, 0700)
+ 	}
+ 
+diff --git a/listcmd.go b/listcmd.go
+index c798627..029119c 100644
+--- a/listcmd.go
++++ b/listcmd.go
+@@ -20,31 +20,31 @@ func DoListCommand() {
+ 	if len(flag.Args()) < 1 {
+ 		flag.Usage()
+ 		os.Exit(1)
+ 	}
+ 
+ 	kerouacRoot := flag.Arg(0)
+ 	var project, tag, datetime string
+ 
+ 	if len(flag.Args()) > 1 {
+ 		project = flag.Arg(1)
+ 	}
+ 
+ 	if len(flag.Args()) > 2 {
+ 		tag = flag.Arg(2)
+ 	}
+ 
+ 	if len(flag.Args()) > 3 {
+ 		datetime = flag.Arg(3)
+ 	}
+ 
+-	buildIds, err := FindMatchingBuildIds(kerouacRoot, project, tag, datetime)
++	recordedBuilds, err := FindMatchingBuilds(kerouacRoot, project, tag, datetime)
+ 
+ 	if err != nil {
+ 		log.Fatalf("Error finding builds: %s", err)
+ 	}
+ 
+-	for _, buildId := range buildIds {
+-		fmt.Printf("%s\n", buildId.FmtBuildDir())
++	for _, recordedBuild := range recordedBuilds {
++		fmt.Printf("%s\n", recordedBuild.FmtBuildDir())
+ 	}
+ 
+ }
+diff --git a/printcmd.go b/printcmd.go
+index b93a533..933bfe4 100644
+--- a/printcmd.go
++++ b/printcmd.go
+@@ -13,47 +13,47 @@ func DoPrintCommand() {
+ 		fmt.Printf("Prints to stdout the build directory, stdout log path, etc. of the specified build.\n\n")
+ 		fmt.Printf("If datetime is not specified, uses the latest build for the tag.\n")
+ 	}
+ 
+ 	flag.Parse()
+ 
+ 	if len(flag.Args()) < 4 || len(flag.Args()) > 5 {
+ 		flag.Usage()
+ 		os.Exit(1)
+ 	}
+ 
+ 	path := flag.Arg(0)
+ 	kerouacRoot := flag.Arg(1)
+ 	project := flag.Arg(2)
+ 	tag := flag.Arg(3)
+ 	var datetime string
+ 	if len(flag.Args()) == 5 {
+ 		datetime = flag.Arg(4)
+ 	}
+ 
+-	buildId, err := FindLatestBuildId(kerouacRoot, project, tag, datetime)
++	recordedBuild, err := FindLatestBuild(kerouacRoot, project, tag, datetime)
+ 
+ 	if err != nil {
+ 		log.Fatal(err)
+ 	}
+ 
+-	if buildId == nil {
++	if recordedBuild == nil {
+ 		os.Exit(1)
+ 	}
+ 
+ 	switch path {
+ 	case "builddir":
+-		fmt.Print(buildId.FmtBuildDir())
++		fmt.Print(recordedBuild.FmtBuildDir())
+ 	case "stdoutpath":
+-		fmt.Print(buildId.FmtStdoutLogPath())
++		fmt.Print(recordedBuild.FmtStdoutLogPath())
+ 	case "stderrpath":
+-		fmt.Print(buildId.FmtStderrLogPath())
++		fmt.Print(recordedBuild.FmtStderrLogPath())
+ 	case "kerouaclogpath":
+-		fmt.Print(buildId.FmtKerouacLogPath())
++		fmt.Print(recordedBuild.FmtKerouacLogPath())
+ 	case "tarballpath":
+-		fmt.Print(buildId.FmtTarballPath())
++		fmt.Print(recordedBuild.FmtTarballPath())
+ 	default:
+ 		log.Printf("Did not recognize path to print: %s\n\n", path)
+ 		flag.Usage()
+ 		os.Exit(1)
+ 	}
+ }
+diff --git a/records.go b/records.go
+index 5cf34ea..f982134 100644
+--- a/records.go
++++ b/records.go
+@@ -1,175 +1,206 @@
+ package main
+ 
+ import (
+ 	"code.google.com/p/go-sqlite/go1/sqlite3"
+ 	"fmt"
+ 	"io"
+ 	"os"
+ 	"path/filepath"
+ 	"time"
+ )
+ 
++type BuildStatus string
++
++const (
++	DateFormat = "2006-01-02 15:04:05"
++
++	FAILED    BuildStatus = "FAILED"
++	SUCCEEDED             = "SUCCEEDED"
++	RUNNING               = "RUNNING"
++)
++
++// RecordedBuild adds the end time of a build and its result to a BuildId.
++type RecordedBuild struct {
++	*BuildId
++	EndTime time.Time
++	Status  BuildStatus
++}
++
++func (r RecordedBuild) Duration() time.Duration {
++	if r.EndTime.IsZero() {
++		return time.Since(r.DateTime)
++	}
++	return r.EndTime.Sub(r.DateTime)
++}
++
+ func CreateBuildRecord(buildId BuildId) error {
+ 	conn, err := getConn(buildId.RootDir)
+ 	if err != nil {
+ 		return err
+ 	}
+ 	defer conn.Close()
+ 
+ 	if err = createTablesAndIndexes(conn); err != nil {
+ 		return err
+ 	}
+ 
+ 	if err = insertBuildRecord(conn, buildId); err != nil {
+ 		return err
+ 	}
+ 
+ 	return nil
+ }
+ 
+-const DateFormat = "2006-01-02 15:04:05"
+-
+ func MarkBuildFailed(buildId BuildId) error {
+-	return updateBuildStatus(buildId, "FAILED")
++	return updateBuildStatus(buildId, FAILED)
+ }
+ 
+ func MarkBuildSucceeded(buildId BuildId) error {
+-	return updateBuildStatus(buildId, "SUCCEDED")
++	return updateBuildStatus(buildId, SUCCEEDED)
+ }
+ 
+-func FindMatchingBuildIds(rootDir string, project string, tag string, datetime string) ([]BuildId, error) {
+-	query := "SELECT project, tag, started_at FROM builds WHERE 1 = 1"
++func FindMatchingBuilds(rootDir string, project string, tag string, datetime string) ([]RecordedBuild, error) {
++	query := "SELECT project, tag, started_at, finished_at, status FROM builds WHERE 1 = 1"
+ 
+ 	args := make([]interface{}, 0, 0)
+ 
+ 	if project != "" {
+ 		query = query + " AND project = ?"
+ 		args = append(args, project)
+ 	}
+ 
+ 	if tag != "" {
+ 		query = query + " AND tag = ?"
+ 		args = append(args, tag)
+ 	}
+ 
+ 	if datetime != "" {
+ 		query = query + " AND started_at = ?"
+ 		args = append(args, datetime)
+ 	}
+ 
+ 	query = query + " ORDER BY started_at DESC;"
+ 
+ 	conn, err := getConn(rootDir)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	defer conn.Close()
+ 
+ 	conn.Query(query, args...)
+ 
+-	buildIds := make([]BuildId, 0, 0)
++	recordedBuilds := make([]RecordedBuild, 0, 0)
+ 
+ 	stmt, err := conn.Query(query, args...)
+ 
+ 	if err == io.EOF {
+-		return buildIds, nil
++		return recordedBuilds, nil
+ 	} else if err != nil {
+ 		return nil, err
+ 	}
+ 
+ 	for {
+-		buildId, err := scanBuildId(rootDir, stmt)
++		recordedBuild, err := scanBuild(rootDir, stmt)
+ 		if err != nil {
+ 			return nil, err
+ 		}
+-		buildIds = append(buildIds, buildId)
++		recordedBuilds = append(recordedBuilds, recordedBuild)
+ 		if err = stmt.Next(); err == io.EOF {
+ 			break
+ 		} else if err != nil {
+ 			return nil, err
+ 		}
+ 	}
+ 
+-	return buildIds, nil
++	return recordedBuilds, nil
+ }
+ 
+-func FindLatestBuildId(rootDir string, project string, tag string, datetime string) (*BuildId, error) {
+-	buildIds, err := FindMatchingBuildIds(rootDir, project, tag, datetime)
++func FindLatestBuild(rootDir string, project string, tag string, datetime string) (*RecordedBuild, error) {
++	recordedBuilds, err := FindMatchingBuilds(rootDir, project, tag, datetime)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	if len(buildIds) == 0 {
++	if len(recordedBuilds) == 0 {
+ 		return nil, nil
+ 	}
+-	return &buildIds[0], nil
++	return &recordedBuilds[0], nil
+ }
+ 
+-func FindBuildIdsGreaterThanN(rootDir string, project string, n int) ([]BuildId, error) {
++func FindBuildsGreaterThanN(rootDir string, project string, n int) ([]RecordedBuild, error) {
+ 	if n < 0 {
+ 		return nil, fmt.Errorf("Cannot find builds greater than %d", n)
+ 	}
+ 
+-	buildIds, err := FindMatchingBuildIds(rootDir, project, "", "")
++	recordedBuilds, err := FindMatchingBuilds(rootDir, project, "", "")
+ 	if err != nil {
+-		return buildIds, err
++		return recordedBuilds, err
+ 	}
+ 
+-	if n > len(buildIds) {
+-		n = len(buildIds)
++	if n > len(recordedBuilds) {
++		n = len(recordedBuilds)
+ 	}
+ 
+-	return buildIds[n:], nil
++	return recordedBuilds[n:], nil
+ }
+ 
+-func scanBuildId(rootDir string, stmt *sqlite3.Stmt) (BuildId, error) {
+-	var rowProject, rowTag, rowDatetime string
+-	err := stmt.Scan(&rowProject, &rowTag, &rowDatetime)
++func scanBuild(rootDir string, stmt *sqlite3.Stmt) (RecordedBuild, error) {
++	var rowProject, rowTag, rowDatetime, rowEndTime, rowStatus string
++	err := stmt.Scan(&rowProject, &rowTag, &rowDatetime, &rowEndTime, &rowStatus)
+ 	if err != nil {
+-		return BuildId{}, err
++		return RecordedBuild{}, err
+ 	}
+ 
+ 	dateTime, err := time.Parse(DateFormat, rowDatetime)
+ 	if err != nil {
+-		return BuildId{}, err
++		return RecordedBuild{}, err
+ 	}
+-	return BuildIdAt(rootDir, rowProject, rowTag, dateTime), nil
++
++	var endTime time.Time
++	if rowEndTime != "" {
++		if endTime, err = time.Parse(DateFormat, rowEndTime); err != nil {
++			return RecordedBuild{}, err
++		}
++	}
++
++	buildId := BuildIdAt(rootDir, rowProject, rowTag, dateTime)
++	return RecordedBuild{&buildId, endTime, BuildStatus(rowStatus)}, nil
+ }
+ 
+-func updateBuildStatus(buildId BuildId, status string) error {
++func updateBuildStatus(buildId BuildId, status BuildStatus) error {
+ 	conn, err := getConn(buildId.RootDir)
+ 	if err != nil {
+ 		return err
+ 	}
+ 	defer conn.Close()
+ 
+-	return conn.Exec("UPDATE builds SET status = ?, finished_at = ? WHERE project = ? AND tag = ? AND started_at = ?", status, time.Now().UTC().Format(DateFormat), buildId.Project, buildId.Tag, buildId.DateTime.Format(DateFormat))
++	return conn.Exec("UPDATE builds SET status = ?, finished_at = ? WHERE project = ? AND tag = ? AND started_at = ?", string(status), time.Now().UTC().Format(DateFormat), buildId.Project, buildId.Tag, buildId.DateTime.Format(DateFormat))
+ 
+ }
+ 
+ func getConn(rootDir string) (*sqlite3.Conn, error) {
+ 	buildDbPath := FmtBuildDbPath(rootDir)
+ 	os.MkdirAll(filepath.Dir(buildDbPath), 0700)
+ 	return sqlite3.Open(buildDbPath)
+ }
+ 
+ const createBuildsTable = "CREATE TABLE IF NOT EXISTS builds (id INTEGER PRIMARYKEY ASC, project TEXT NOT NULL, tag TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, status TEXT)"
+ 
+ const createBuildsUniqueIdx = "CREATE UNIQUE INDEX IF NOT EXISTS builds_idx ON builds (project, tag, started_at)"
+ 
+ func createTablesAndIndexes(conn *sqlite3.Conn) error {
+ 	stmts := []string{createBuildsTable, createBuildsUniqueIdx}
+ 
+ 	for _, stmt := range stmts {
+ 		if err := conn.Exec(stmt); err != nil {
+ 			return err
+ 		}
+ 	}
+ 
+ 	return nil
+ }
+ 
+ // This acts as the locking mechanism to make sure we don't have two builds in
+ // the identical folder, as well as record keeping.
+ func insertBuildRecord(conn *sqlite3.Conn, buildId BuildId) error {
+-	return conn.Exec("INSERT INTO builds (project, tag, started_at, status) VALUES (?, ?, ?, ?)", buildId.Project, buildId.Tag, buildId.DateTime.Format(DateFormat), "RUNNING")
++	return conn.Exec("INSERT INTO builds (project, tag, started_at, status) VALUES (?, ?, ?, ?)", buildId.Project, buildId.Tag, buildId.DateTime.Format(DateFormat), string(RUNNING))
+ }
+diff --git a/records_test.go b/records_test.go
+new file mode 100644
+index 0000000..d35fcc1
+--- /dev/null
++++ b/records_test.go
+@@ -0,0 +1,19 @@
++package main
++
++import (
++	"testing"
++	"time"
++)
++
++func knownRecordedBuild() RecordedBuild {
++	buildId := knownBuildId()
++	return RecordedBuild{&buildId, buildId.DateTime.Add(1 * time.Minute), SUCCEEDED}
++}
++
++func TestRecordedBuildDuration(t *testing.T) {
++	recordedBuild := knownRecordedBuild()
++	expectedDuration := 1 * time.Minute
++	if duration := recordedBuild.Duration(); duration != expectedDuration {
++		t.Errorf("Duration() returned %s not %s", duration, expectedDuration)
++	}
++}

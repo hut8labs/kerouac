@@ -1,0 +1,451 @@
+#* 
+#* author: Matt Papi
+#* email: mmpapi@gmail.com
+#* date: 2015-01-24T15:18:48-0500
+#* 
+#- Change Fmt() functions of BuildIds to methods.
+#- 
+#- This sets us up for having a struct for build results that embeds a
+#- BuildId, and lets us call those Fmt() functions on the build result
+#- structs as well.
+#- 
+#- 
+diff --git a/build.go b/build.go
+index 7c8f2e3..0b7e1af 100644
+--- a/build.go
++++ b/build.go
+@@ -22,42 +22,42 @@ func BuildIdAtNow(rootDir string, project string, tag string) BuildId {
+ }
+ 
+ func BuildIdAt(rootDir string, project string, tag string, dateTime time.Time) BuildId {
+ 	return BuildId{RootDir: rootDir, Project: project, Tag: tag, DateTime: dateTime}
+ }
+ 
+ // Contains paths to files containing stdout and stderr from the build process.
+ type BuildOutput struct {
+ 	StdoutPath string
+ 	StderrPath string
+ }
+ 
+ // Run the supplied build script, after changing directory to buildDir.
+ //
+ // The script's stdout and stderr will be captured and written to the
+ // appropriate directory under kerouacResultsRootDir (see dirs.go for more).
+ func RunBuildScript(buildDir string, buildScript string, buildScriptArgs []string, timeoutInSecs int, buildId BuildId) (*BuildOutput, error) {
+ 	cmd := exec.Command(buildScript, buildScriptArgs...)
+ 	cmd.Dir = buildDir
+ 
+-	stdoutPath := FmtStdoutLogPath(buildId)
+-	stderrPath := FmtStderrLogPath(buildId)
++	stdoutPath := buildId.FmtStdoutLogPath()
++	stderrPath := buildId.FmtStderrLogPath()
+ 
+ 	buildOutput := &BuildOutput{StdoutPath: stdoutPath, StderrPath: stderrPath}
+ 
+ 	stdoutFile, err := os.Create(stdoutPath)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	defer stdoutFile.Close()
+ 
+ 	stderrFile, err := os.Create(stderrPath)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	defer stderrFile.Close()
+ 
+ 	cmd.Stdout = stdoutFile
+ 	cmd.Stderr = stderrFile
+ 
+ 	cmdDone := make(chan error)
+ 
+diff --git a/buildcmd.go b/buildcmd.go
+index e568a08..487f602 100644
+--- a/buildcmd.go
++++ b/buildcmd.go
+@@ -63,130 +63,130 @@ func DoBuildCommand() {
+ 		}
+ 
+ 		os.Exit(0)
+ 	} else {
+ 		os.Exit(1)
+ 	}
+ 
+ }
+ 
+ func cleanOldBuilds(rootDir string, project string, buildsToKeep int) error {
+ 	if buildsToKeep < 1 {
+ 		return fmt.Errorf("Refusing to keep < 1 build, not deleting any: %d", buildsToKeep)
+ 	}
+ 
+ 	buildIdsToRemove, err := FindBuildIdsGreaterThanN(rootDir, project, buildsToKeep)
+ 	if err != nil {
+ 		return err
+ 	}
+ 
+ 	for _, buildId := range buildIdsToRemove {
+-		buildDir := FmtBuildDir(buildId)
++		buildDir := buildId.FmtBuildDir()
+ 		log.Printf("Removing old build dir %s", buildDir)
+ 		if err = os.RemoveAll(buildDir); err != nil {
+ 			return err
+ 		}
+ 	}
+ 
+ 	return nil
+ }
+ 
+ func logAndDie(msg string, buildId BuildId) {
+ 	if err := MarkBuildFailed(buildId); err != nil {
+ 		log.Printf("Could not mark build failed in db: %s", err)
+ 	}
+ 	log.Fatalf(msg)
+ }
+ 
+ func createBuildRecord(buildId BuildId) {
+ 	log.Printf("Creating db record for build.")
+ 
+ 	if !*dryRun {
+ 		if err := CreateBuildRecord(buildId); err != nil {
+ 			log.Fatalf("Could not create build record: %s", err)
+ 		}
+ 	}
+ }
+ 
+ func maybeRemoveSrcDir(srcDir string) {
+ 	if !*removeSrcDir {
+ 		log.Printf("Not removing source dir.")
+ 	} else {
+ 		log.Printf("Removing source dir due to --remove-src %s", srcDir)
+ 		if !*dryRun {
+ 			os.RemoveAll(srcDir)
+ 		}
+ 	}
+ }
+ 
+ func createTarball(srcDir string, buildId BuildId) {
+-	log.Printf("Tarballing %s into %s", srcDir, FmtTarballPath(buildId))
++	log.Printf("Tarballing %s into %s", srcDir, buildId.FmtTarballPath())
+ 
+ 	if !*dryRun {
+ 		if err := CreateTarball(srcDir, buildId); err != nil {
+ 			logAndDie(fmt.Sprintf("Error creating tarball: %s", err), buildId)
+ 		}
+ 	}
+ }
+ 
+ func runBuild(srcDir string, config *Config, buildId BuildId) bool {
+ 	log.Printf("Running build in dir %s with script %s and args %s", srcDir, config.BuildScript, config.BuildScriptArgs)
+ 
+ 	succeeded := false
+ 
+ 	if !*dryRun {
+ 		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, config.TimeoutInSecs, buildId)
+ 
+ 		if err != nil {
+ 			log.Printf("Completed build with error: %s", err)
+ 			MarkBuildFailed(buildId)
+ 		} else {
+ 			log.Printf("Completed build successfully.")
+ 			MarkBuildSucceeded(buildId)
+ 			succeeded = true
+ 		}
+ 
+ 		log.Printf("Build script stdout in: %s", buildOutput.StdoutPath)
+ 		log.Printf("Build script stderr in: %s", buildOutput.StderrPath)
+ 	}
+ 
+ 	return succeeded
+ }
+ 
+ func configureLogging(buildId BuildId) *os.File {
+-	logsDir := FmtLogsDir(buildId)
++	logsDir := buildId.FmtLogsDir()
+ 
+ 	log.Printf("Creating logs dir %s with perms 0700", logsDir)
+ 
+ 	if !*dryRun {
+ 		// TODO: reconsider permissions
+ 		os.MkdirAll(logsDir, 0700)
+ 	}
+ 
+-	logPath := FmtKerouacLogPath(buildId)
++	logPath := buildId.FmtKerouacLogPath()
+ 
+ 	log.Printf("Creating log at %s", logPath)
+ 
+ 	var logFile *os.File
+ 	var err error
+ 
+ 	if !*dryRun {
+ 		logFile, err = os.Create(logPath)
+ 		if err != nil {
+ 			log.Fatalf("Logging ironic error, could not configure logging: %s", err)
+ 		}
+ 	}
+ 
+ 	log.Printf("Teeing log output to %s and stderr", logPath)
+ 
+ 	if !*dryRun {
+ 		writer := io.MultiWriter(os.Stderr, logFile)
+ 		log.SetOutput(writer)
+ 	}
+ 
+ 	return logFile
+ }
+ 
+ func logStart(buildId BuildId) {
+ 	log.Printf("Starting build of %s with tag %s at %s", buildId.Project, buildId.Tag, buildId.DateTime.Format("2006-01-02 15:04:05 (MST)"))
+-	log.Printf("Build dir is %s", FmtBuildDir(buildId))
++	log.Printf("Build dir is %s", buildId.FmtBuildDir())
+ }
+diff --git a/layout.go b/layout.go
+index eb2a5bb..bc9edd4 100644
+--- a/layout.go
++++ b/layout.go
+@@ -17,48 +17,48 @@ import (
+ //       - datetag [FmtBuildDir]
+ //         build.tar.gz [FmtTarballPath]
+ //         - logs [FmtLogsDir]
+ //             stdout [FmtStdoutLogPath]
+ //             stderr [FmtStderrLogPath]
+ //             kerouac.log [FmtKerouacLogPath]
+ // - index.html
+ // - pages
+ //
+ 
+ const (
+ 	BuildsDir      = "builds"
+ 	LogsDir        = "logs"
+ 	StderrLogName  = "stderr"
+ 	StdoutLogName  = "stdout"
+ 	KerouacLogName = "kerouac.log"
+ 	TarballName    = "build.tar.gz"
+ 	BuildDbName    = "builds.db"
+ )
+ 
+-func FmtBuildDir(buildId BuildId) string {
++func (buildId BuildId) FmtBuildDir() string {
+ 	dateTag := buildId.DateTime.Format("2006_01_02_15_04_05")
+ 	return filepath.Join(buildId.RootDir, BuildsDir, buildId.Project, buildId.Tag, dateTag)
+ }
+ 
+-func FmtLogsDir(buildId BuildId) string {
+-	return filepath.Join(FmtBuildDir(buildId), LogsDir)
++func (buildId BuildId) FmtLogsDir() string {
++	return filepath.Join(buildId.FmtBuildDir(), LogsDir)
+ }
+ 
+-func FmtStderrLogPath(buildId BuildId) string {
+-	return filepath.Join(FmtLogsDir(buildId), StderrLogName)
++func (buildId BuildId) FmtStderrLogPath() string {
++	return filepath.Join(buildId.FmtLogsDir(), StderrLogName)
+ }
+ 
+-func FmtStdoutLogPath(buildId BuildId) string {
+-	return filepath.Join(FmtLogsDir(buildId), StdoutLogName)
++func (buildId BuildId) FmtStdoutLogPath() string {
++	return filepath.Join(buildId.FmtLogsDir(), StdoutLogName)
+ }
+ 
+-func FmtKerouacLogPath(buildId BuildId) string {
+-	return filepath.Join(FmtLogsDir(buildId), KerouacLogName)
++func (buildId BuildId) FmtKerouacLogPath() string {
++	return filepath.Join(buildId.FmtLogsDir(), KerouacLogName)
+ }
+ 
+-func FmtTarballPath(buildId BuildId) string {
+-	return filepath.Join(FmtBuildDir(buildId), TarballName)
++func (buildId BuildId) FmtTarballPath() string {
++	return filepath.Join(buildId.FmtBuildDir(), TarballName)
+ }
+ 
+ func FmtBuildDbPath(rootDir string) string {
+ 	return filepath.Join(rootDir, BuildDbName)
+ }
+diff --git a/layout_test.go b/layout_test.go
+index cdaa3f9..3474d6a 100644
+--- a/layout_test.go
++++ b/layout_test.go
+@@ -20,73 +20,73 @@ const (
+ // accident.
+ var (
+ 	KnownDateTime, _ = time.Parse(KnownDateTimeS, KnownDateTimeS)
+ 	KnownBuildDir    = filepath.Join(KnownRootDir, BuildsDir, KnownProject, KnownTag, KnownDateTimeSU)
+ 	KnownLogsDir     = filepath.Join(KnownBuildDir, LogsDir)
+ 	KnownStderrPath  = filepath.Join(KnownLogsDir, StderrLogName)
+ 	KnownStdoutPath  = filepath.Join(KnownLogsDir, StdoutLogName)
+ 	KnownKerouacPath = filepath.Join(KnownLogsDir, KerouacLogName)
+ 	KnownTarballPath = filepath.Join(KnownBuildDir, TarballName)
+ 	KnownBuildDbPath = filepath.Join(KnownRootDir, BuildDbName)
+ )
+ 
+ // Create a known build id from constants, including the datetime, so we can
+ // expect deterministic results.
+ func knownBuildId() BuildId {
+ 	return BuildId{RootDir: KnownRootDir, Project: KnownProject, Tag: KnownTag, DateTime: KnownDateTime}
+ }
+ 
+ func TestFmtBuildDir(t *testing.T) {
+ 	buildId := knownBuildId()
+-	buildDir := FmtBuildDir(buildId)
++	buildDir := buildId.FmtBuildDir()
+ 	if buildDir != KnownBuildDir {
+ 		t.Errorf("FmtBuildDir returned %s not %s", buildDir, KnownBuildDir)
+ 	}
+ }
+ 
+ func TestFmtLogsDir(t *testing.T) {
+ 	buildId := knownBuildId()
+-	logsDir := FmtLogsDir(buildId)
++	logsDir := buildId.FmtLogsDir()
+ 	if logsDir != KnownLogsDir {
+ 		t.Errorf("FmtLogsDir returned %s not %s", logsDir, KnownLogsDir)
+ 	}
+ }
+ 
+ func TestFmtStderrLogPath(t *testing.T) {
+ 	buildId := knownBuildId()
+-	stderrPath := FmtStderrLogPath(buildId)
++	stderrPath := buildId.FmtStderrLogPath()
+ 	if stderrPath != KnownStderrPath {
+ 		t.Errorf("FmtStderrLogPath returned %s not %s", stderrPath, KnownStderrPath)
+ 	}
+ }
+ 
+ func TestFmtStdoutLogPath(t *testing.T) {
+ 	buildId := knownBuildId()
+-	stdoutPath := FmtStdoutLogPath(buildId)
++	stdoutPath := buildId.FmtStdoutLogPath()
+ 	if stdoutPath != KnownStdoutPath {
+ 		t.Errorf("FmtStdoutLogPath returned %s not %s", stdoutPath, KnownStdoutPath)
+ 	}
+ }
+ 
+ func TestFmtKerouacLogPath(t *testing.T) {
+ 	buildId := knownBuildId()
+-	stdoutPath := FmtKerouacLogPath(buildId)
++	stdoutPath := buildId.FmtKerouacLogPath()
+ 	if stdoutPath != KnownKerouacPath {
+ 		t.Errorf("FmtKerouacLogPath returned %s not %s", stdoutPath, KnownKerouacPath)
+ 	}
+ }
+ 
+ func TestFmtTarballPath(t *testing.T) {
+ 	buildId := knownBuildId()
+-	tarballPath := FmtTarballPath(buildId)
++	tarballPath := buildId.FmtTarballPath()
+ 	if tarballPath != KnownTarballPath {
+ 		t.Errorf("FmtTarballPath returned %s not %s", tarballPath, KnownTarballPath)
+ 	}
+ }
+ 
+ func TestFmtBuildDbName(t *testing.T) {
+ 	buildId := knownBuildId()
+ 	buildDbPath := FmtBuildDbPath(buildId.RootDir)
+ 	if buildDbPath != KnownBuildDbPath {
+ 		t.Errorf("FmtBuildDbPath returned %s not %s", buildDbPath, KnownBuildDbPath)
+ 	}
+ }
+diff --git a/listcmd.go b/listcmd.go
+index c8b720d..c798627 100644
+--- a/listcmd.go
++++ b/listcmd.go
+@@ -27,24 +27,24 @@ func DoListCommand() {
+ 
+ 	if len(flag.Args()) > 1 {
+ 		project = flag.Arg(1)
+ 	}
+ 
+ 	if len(flag.Args()) > 2 {
+ 		tag = flag.Arg(2)
+ 	}
+ 
+ 	if len(flag.Args()) > 3 {
+ 		datetime = flag.Arg(3)
+ 	}
+ 
+ 	buildIds, err := FindMatchingBuildIds(kerouacRoot, project, tag, datetime)
+ 
+ 	if err != nil {
+ 		log.Fatalf("Error finding builds: %s", err)
+ 	}
+ 
+ 	for _, buildId := range buildIds {
+-		fmt.Printf("%s\n", FmtBuildDir(buildId))
++		fmt.Printf("%s\n", buildId.FmtBuildDir())
+ 	}
+ 
+ }
+diff --git a/printcmd.go b/printcmd.go
+index 8f08151..b93a533 100644
+--- a/printcmd.go
++++ b/printcmd.go
+@@ -25,35 +25,35 @@ func DoPrintCommand() {
+ 	kerouacRoot := flag.Arg(1)
+ 	project := flag.Arg(2)
+ 	tag := flag.Arg(3)
+ 	var datetime string
+ 	if len(flag.Args()) == 5 {
+ 		datetime = flag.Arg(4)
+ 	}
+ 
+ 	buildId, err := FindLatestBuildId(kerouacRoot, project, tag, datetime)
+ 
+ 	if err != nil {
+ 		log.Fatal(err)
+ 	}
+ 
+ 	if buildId == nil {
+ 		os.Exit(1)
+ 	}
+ 
+ 	switch path {
+ 	case "builddir":
+-		fmt.Print(FmtBuildDir(*buildId))
++		fmt.Print(buildId.FmtBuildDir())
+ 	case "stdoutpath":
+-		fmt.Print(FmtStdoutLogPath(*buildId))
++		fmt.Print(buildId.FmtStdoutLogPath())
+ 	case "stderrpath":
+-		fmt.Print(FmtStderrLogPath(*buildId))
++		fmt.Print(buildId.FmtStderrLogPath())
+ 	case "kerouaclogpath":
+-		fmt.Print(FmtKerouacLogPath(*buildId))
++		fmt.Print(buildId.FmtKerouacLogPath())
+ 	case "tarballpath":
+-		fmt.Print(FmtTarballPath(*buildId))
++		fmt.Print(buildId.FmtTarballPath())
+ 	default:
+ 		log.Printf("Did not recognize path to print: %s\n\n", path)
+ 		flag.Usage()
+ 		os.Exit(1)
+ 	}
+ }
+diff --git a/tarball.go b/tarball.go
+index ed23254..afe2652 100644
+--- a/tarball.go
++++ b/tarball.go
+@@ -1,21 +1,21 @@
+ package main
+ 
+ import (
+ 	"os/exec"
+ )
+ 
+ // Create a tarball of srcDir, writing it to the location indicated by
+ // layout.FmtTarballPath.
+ //
+ // Currently this uses the external tar exe, which must be in the path, and
+ // changes directory to the srcDir before tarring the current directory (".").
+ //
+ // Returns nil on success, or an error if something goes wrong.
+ //
+ // At some point it might make sense to write this using go's tar and gzip
+ // utilities, so it could run on systems without tar / be more self contained.
+ func CreateTarball(srcDir string, buildId BuildId) error {
+-	tarballPath := FmtTarballPath(buildId)
++	tarballPath := buildId.FmtTarballPath()
+ 	cmd := exec.Command("tar", "-c", "-z", "-C", srcDir, "-f", tarballPath, ".")
+ 	return cmd.Run()
+ }

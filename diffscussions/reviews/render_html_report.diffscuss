@@ -1,0 +1,386 @@
+#* 
+#* author: Matt Papi
+#* email: mmpapi@gmail.com
+#* date: 2015-01-24T15:20:15-0500
+#* 
+#- Render a simple HTML report on build.
+#- 
+#- 
+diff --git a/buildcmd.go b/buildcmd.go
+index 9d00668..56ebcc6 100644
+--- a/buildcmd.go
++++ b/buildcmd.go
+@@ -40,40 +40,44 @@ func DoBuildCommand() {
+ 	if *dryRun {
+ 		log.Printf("Dry run, will print actions but not take them.")
+ 	}
+ 
+ 	createBuildRecord(buildId)
+ 
+ 	logFile := configureLogging(buildId)
+ 	defer logFile.Close()
+ 
+ 	logStart(buildId)
+ 
+ 	config, err := ParseConfigFile(configFile)
+ 	if err != nil {
+ 		logAndDie(fmt.Sprintf("Error parsing config file: %s", err), buildId)
+ 	}
+ 
+ 	buildSuceeded := runBuild(srcDir, config, buildId)
+ 	createTarball(srcDir, buildId)
+ 	maybeRemoveSrcDir(srcDir)
+ 
++	if err := renderBuildReport(rootDir); err != nil {
++		log.Printf("Warning, error writing build report: %s", err)
++	}
++
+ 	if buildSuceeded {
+ 		if err = cleanOldBuilds(buildId.RootDir, buildId.Project, config.NumBuildsToKeep); err != nil {
+ 			log.Printf("Warning, error trying to remove old builds: %s", err)
+ 		}
+ 
+ 		os.Exit(0)
+ 	} else {
+ 		os.Exit(1)
+ 	}
+ 
+ }
+ 
+ func cleanOldBuilds(rootDir string, project string, buildsToKeep int) error {
+ 	if buildsToKeep < 1 {
+ 		return fmt.Errorf("Refusing to keep < 1 build, not deleting any: %d", buildsToKeep)
+ 	}
+ 
+ 	buildsToRemove, err := FindBuildsGreaterThanN(rootDir, project, buildsToKeep)
+ 	if err != nil {
+ 		return err
+@@ -111,40 +115,54 @@ func maybeRemoveSrcDir(srcDir string) {
+ 	if !*removeSrcDir {
+ 		log.Printf("Not removing source dir.")
+ 	} else {
+ 		log.Printf("Removing source dir due to --remove-src %s", srcDir)
+ 		if !*dryRun {
+ 			os.RemoveAll(srcDir)
+ 		}
+ 	}
+ }
+ 
+ func createTarball(srcDir string, buildId BuildId) {
+ 	log.Printf("Tarballing %s into %s", srcDir, buildId.FmtTarballPath())
+ 
+ 	if !*dryRun {
+ 		if err := CreateTarball(srcDir, buildId); err != nil {
+ 			logAndDie(fmt.Sprintf("Error creating tarball: %s", err), buildId)
+ 		}
+ 	}
+ }
+ 
++func renderBuildReport(rootDir string) error {
++	reportPath := FmtBuildHTMLReportPath(rootDir)
++	log.Printf("Writing the build report to %s", reportPath)
++
++	if !*dryRun {
++		if builds, err := FindMatchingBuilds(rootDir, "", "", ""); err != nil {
++			return err
++		} else if err := RenderHTMLReport(reportPath, builds); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
+ func runBuild(srcDir string, config *Config, buildId BuildId) bool {
+ 	log.Printf("Running build in dir %s with script %s and args %s", srcDir, config.BuildScript, config.BuildScriptArgs)
+ 
+ 	succeeded := false
+ 
+ 	if !*dryRun {
+ 		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, config.TimeoutInSecs, buildId)
+ 
+ 		if err != nil {
+ 			log.Printf("Completed build with error: %s", err)
+ 			if err := MarkBuildFailed(buildId); err != nil {
+ 				log.Printf("Warning, could not record build as failed: %s", err)
+ 			}
+ 		} else {
+ 			log.Printf("Completed build successfully.")
+ 			if err := MarkBuildSucceeded(buildId); err != nil {
+ 				log.Printf("Warning, could not record build as failed: %s", err)
+ 			}
+ 			succeeded = true
+ 		}
+diff --git a/layout.go b/layout.go
+index bc9edd4..bf28cf9 100644
+--- a/layout.go
++++ b/layout.go
+@@ -8,57 +8,62 @@ import (
+ //
+ // In short, there is a root directory for kerouac results, under which we
+ // enforce the following layout (the [FmtXYZ] denote which functions will
+ // return that path):
+ //
+ // - builds.db [FmtBuildDbPath]
+ // - builds
+ //   - project_one
+ //     - buildtag
+ //       - datetag [FmtBuildDir]
+ //         build.tar.gz [FmtTarballPath]
+ //         - logs [FmtLogsDir]
+ //             stdout [FmtStdoutLogPath]
+ //             stderr [FmtStderrLogPath]
+ //             kerouac.log [FmtKerouacLogPath]
+ // - index.html
+ // - pages
+ //
+ 
+ const (
+-	BuildsDir      = "builds"
+-	LogsDir        = "logs"
+-	StderrLogName  = "stderr"
+-	StdoutLogName  = "stdout"
+-	KerouacLogName = "kerouac.log"
+-	TarballName    = "build.tar.gz"
+-	BuildDbName    = "builds.db"
++	BuildsDir           = "builds"
++	LogsDir             = "logs"
++	StderrLogName       = "stderr"
++	StdoutLogName       = "stdout"
++	KerouacLogName      = "kerouac.log"
++	TarballName         = "build.tar.gz"
++	BuildDbName         = "builds.db"
++	BuildHTMLReportName = "builds.html"
+ )
+ 
+ func (buildId BuildId) FmtBuildDir() string {
+ 	dateTag := buildId.DateTime.Format("2006_01_02_15_04_05")
+ 	return filepath.Join(buildId.RootDir, BuildsDir, buildId.Project, buildId.Tag, dateTag)
+ }
+ 
+ func (buildId BuildId) FmtLogsDir() string {
+ 	return filepath.Join(buildId.FmtBuildDir(), LogsDir)
+ }
+ 
+ func (buildId BuildId) FmtStderrLogPath() string {
+ 	return filepath.Join(buildId.FmtLogsDir(), StderrLogName)
+ }
+ 
+ func (buildId BuildId) FmtStdoutLogPath() string {
+ 	return filepath.Join(buildId.FmtLogsDir(), StdoutLogName)
+ }
+ 
+ func (buildId BuildId) FmtKerouacLogPath() string {
+ 	return filepath.Join(buildId.FmtLogsDir(), KerouacLogName)
+ }
+ 
+ func (buildId BuildId) FmtTarballPath() string {
+ 	return filepath.Join(buildId.FmtBuildDir(), TarballName)
+ }
+ 
+ func FmtBuildDbPath(rootDir string) string {
+ 	return filepath.Join(rootDir, BuildDbName)
+ }
++
++func FmtBuildHTMLReportPath(rootDir string) string {
++	return filepath.Join(rootDir, BuildHTMLReportName)
++}
+diff --git a/layout_test.go b/layout_test.go
+index 3474d6a..a0d9147 100644
+--- a/layout_test.go
++++ b/layout_test.go
+@@ -2,48 +2,49 @@ package main
+ 
+ import (
+ 	"path/filepath"
+ 	"testing"
+ 	"time"
+ )
+ 
+ // Hardcoded values for our synthetic build.
+ const (
+ 	KnownRootDir    = "known_test_root"
+ 	KnownProject    = "known_test_project"
+ 	KnownTag        = "known_test_tag"
+ 	KnownDateTimeS  = "2006-01-02 15:04:05"
+ 	KnownDateTimeSU = "2006_01_02_15_04_05"
+ )
+ 
+ // Do a bunch of the same work we expect layout to do so we can test, but do it
+ // with filepath.Join just in case this someday works on Windows by pure
+ // accident.
+ var (
+-	KnownDateTime, _ = time.Parse(KnownDateTimeS, KnownDateTimeS)
+-	KnownBuildDir    = filepath.Join(KnownRootDir, BuildsDir, KnownProject, KnownTag, KnownDateTimeSU)
+-	KnownLogsDir     = filepath.Join(KnownBuildDir, LogsDir)
+-	KnownStderrPath  = filepath.Join(KnownLogsDir, StderrLogName)
+-	KnownStdoutPath  = filepath.Join(KnownLogsDir, StdoutLogName)
+-	KnownKerouacPath = filepath.Join(KnownLogsDir, KerouacLogName)
+-	KnownTarballPath = filepath.Join(KnownBuildDir, TarballName)
+-	KnownBuildDbPath = filepath.Join(KnownRootDir, BuildDbName)
++	KnownDateTime, _         = time.Parse(KnownDateTimeS, KnownDateTimeS)
++	KnownBuildDir            = filepath.Join(KnownRootDir, BuildsDir, KnownProject, KnownTag, KnownDateTimeSU)
++	KnownLogsDir             = filepath.Join(KnownBuildDir, LogsDir)
++	KnownStderrPath          = filepath.Join(KnownLogsDir, StderrLogName)
++	KnownStdoutPath          = filepath.Join(KnownLogsDir, StdoutLogName)
++	KnownKerouacPath         = filepath.Join(KnownLogsDir, KerouacLogName)
++	KnownTarballPath         = filepath.Join(KnownBuildDir, TarballName)
++	KnownBuildDbPath         = filepath.Join(KnownRootDir, BuildDbName)
++	KnownBuildHTMLReportPath = filepath.Join(KnownRootDir, BuildHTMLReportName)
+ )
+ 
+ // Create a known build id from constants, including the datetime, so we can
+ // expect deterministic results.
+ func knownBuildId() BuildId {
+ 	return BuildId{RootDir: KnownRootDir, Project: KnownProject, Tag: KnownTag, DateTime: KnownDateTime}
+ }
+ 
+ func TestFmtBuildDir(t *testing.T) {
+ 	buildId := knownBuildId()
+ 	buildDir := buildId.FmtBuildDir()
+ 	if buildDir != KnownBuildDir {
+ 		t.Errorf("FmtBuildDir returned %s not %s", buildDir, KnownBuildDir)
+ 	}
+ }
+ 
+ func TestFmtLogsDir(t *testing.T) {
+ 	buildId := knownBuildId()
+ 	logsDir := buildId.FmtLogsDir()
+ 	if logsDir != KnownLogsDir {
+@@ -73,20 +74,28 @@ func TestFmtKerouacLogPath(t *testing.T) {
+ 	if stdoutPath != KnownKerouacPath {
+ 		t.Errorf("FmtKerouacLogPath returned %s not %s", stdoutPath, KnownKerouacPath)
+ 	}
+ }
+ 
+ func TestFmtTarballPath(t *testing.T) {
+ 	buildId := knownBuildId()
+ 	tarballPath := buildId.FmtTarballPath()
+ 	if tarballPath != KnownTarballPath {
+ 		t.Errorf("FmtTarballPath returned %s not %s", tarballPath, KnownTarballPath)
+ 	}
+ }
+ 
+ func TestFmtBuildDbName(t *testing.T) {
+ 	buildId := knownBuildId()
+ 	buildDbPath := FmtBuildDbPath(buildId.RootDir)
+ 	if buildDbPath != KnownBuildDbPath {
+ 		t.Errorf("FmtBuildDbPath returned %s not %s", buildDbPath, KnownBuildDbPath)
+ 	}
+ }
++
++func TestFmtBuildHTMLReportName(t *testing.T) {
++	buildId := knownBuildId()
++	buildHTMLReportPath := FmtBuildHTMLReportPath(buildId.RootDir)
++	if buildHTMLReportPath != KnownBuildHTMLReportPath {
++		t.Errorf("FmtBuildHTMLReportPath returned %s not %s", buildHTMLReportPath, KnownBuildHTMLReportPath)
++	}
++}
+diff --git a/report.go b/report.go
+new file mode 100644
+index 0000000..8379dbc
+--- /dev/null
++++ b/report.go
+@@ -0,0 +1,103 @@
++package main
++
++import (
++	"fmt"
++	"html/template"
++	"os"
++	"path/filepath"
++	"time"
++)
++
++const REPORT_MAX_BUILDS = 100 // Eventually, this will be configurable.
++
++type templateFields struct {
++	Builds  []RecordedBuild
++	CSSPath string
++}
++
++func RenderHTMLReport(reportPath string, builds []RecordedBuild) (err error) {
++	file, err := os.Create(reportPath)
++	if err != nil {
++		return err
++	}
++	defer file.Close()
++
++	// Templates can panic(), so set up a recover just in case.
++	defer func() {
++		if r := recover(); r != nil {
++			err = fmt.Errorf("error rendering HTML report: %s", r)
++		}
++	}()
++
++	numBuilds := len(builds)
++	if numBuilds > REPORT_MAX_BUILDS {
++		numBuilds = REPORT_MAX_BUILDS
++	}
++	fields := &templateFields{Builds: builds[0:numBuilds]}
++
++	tryCSSPath := filepath.Join(filepath.Dir(reportPath), "builds.css")
++	if stat, err := os.Stat(tryCSSPath); err == nil && !stat.IsDir() {
++		fields.CSSPath = tryCSSPath
++	}
++
++	funcMap := map[string]interface{}{
++		"relative": func(path string) (string, error) {
++			return filepath.Rel(filepath.Dir(reportPath), path)
++		},
++		"base": func(path string) string {
++			return filepath.Base(path)
++		},
++		"friendlyDate": func(timestamp time.Time) string {
++			return timestamp.Format(time.RFC1123)
++		},
++	}
++	htmlTemplate := template.Must(template.New("HTMLReport").Funcs(funcMap).Parse(HTMLTemplate))
++	return htmlTemplate.Execute(file, fields)
++}
++
++var HTMLTemplate = `<!doctype html>
++<html>
++<head>
++  <title>Kerouac: Build Report</title>
++  <style>
++    table { border-collapse: collapse; }
++	table, th, td { border: 1px solid black; }
++    th, td { padding: 1em; text-align: center; }
++  </style>
++  {{ if .CSSPath }}<link rel="stylesheet" type="text/css" href="{{ .CSSPath | relative }}" />{{ end }}
++</head>
++<body>
++<h1>Kerouac: Build Report</h1>
++<table>
++<thead>
++<tr>
++<th>Project</th>
++<th>Tag</th>
++<th>Start</th>
++<th>End</th>
++<th>Duration</th>
++<th>Status</th>
++<th>Logs</th>
++<th>Tarball</th>
++</tr>
++</thead>
++<tbody>
++{{ range .Builds }}
++<tr class="build status-{{ .Status }}">
++  <td class="project">{{ .Project }}</td>
++  <td class="tag">{{ .Tag }}</td>
++  <td class="start">{{ .DateTime | friendlyDate }}</td>
++  <td class="end">{{ if .EndTime }}{{ .EndTime | friendlyDate }}{{ end }}</td>
++  <td class="duration">{{ .Duration }}</td>
++  <td class="status">{{ .Status }}</td>
++  <td class="logs">
++	<a href="{{ .FmtStdoutLogPath | relative }}">{{ .FmtStdoutLogPath | base }}</a>
++	<a href="{{ .FmtStderrLogPath | relative }}">{{ .FmtStderrLogPath | base }}</a>
++	<a href="{{ .FmtKerouacLogPath | relative }}">{{ .FmtKerouacLogPath | base }}</a>
++  </td>
++  <td class="tarball"><a href="{{ .FmtTarballPath | relative }}">{{ .FmtTarballPath | base }}</a></td>
++</tr>
++{{ end }}
++</tbody>
++</body>
++</html>`
