@@ -74,13 +74,13 @@ func cleanOldBuilds(rootDir string, project string, buildsToKeep int) error {
 		return fmt.Errorf("Refusing to keep < 1 build, not deleting any: %d", buildsToKeep)
 	}
 
-	buildIdsToRemove, err := FindBuildIdsGreaterThanN(rootDir, project, buildsToKeep)
+	buildsToRemove, err := FindBuildsGreaterThanN(rootDir, project, buildsToKeep)
 	if err != nil {
 		return err
 	}
 
-	for _, buildId := range buildIdsToRemove {
-		buildDir := buildId.FmtBuildDir()
+	for _, recordedBuild := range buildsToRemove {
+		buildDir := recordedBuild.FmtBuildDir()
 		log.Printf("Removing old build dir %s", buildDir)
 		if err = os.RemoveAll(buildDir); err != nil {
 			return err
@@ -138,10 +138,14 @@ func runBuild(srcDir string, config *Config, buildId BuildId) bool {
 
 		if err != nil {
 			log.Printf("Completed build with error: %s", err)
-			MarkBuildFailed(buildId)
+			if err := MarkBuildFailed(buildId); err != nil {
+				log.Printf("Warning, could not record build as failed: %s", err)
+			}
 		} else {
 			log.Printf("Completed build successfully.")
-			MarkBuildSucceeded(buildId)
+			if err := MarkBuildSucceeded(buildId); err != nil {
+				log.Printf("Warning, could not record build as failed: %s", err)
+			}
 			succeeded = true
 		}
 

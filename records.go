@@ -9,6 +9,30 @@ import (
 	"time"
 )
 
+type BuildStatus string
+
+const (
+	DateFormat = "2006-01-02 15:04:05"
+
+	FAILED    BuildStatus = "FAILED"
+	SUCCEEDED             = "SUCCEEDED"
+	RUNNING               = "RUNNING"
+)
+
+// RecordedBuild adds the end time of a build and its result to a BuildId.
+type RecordedBuild struct {
+	*BuildId
+	EndTime time.Time
+	Status  BuildStatus
+}
+
+func (r RecordedBuild) Duration() time.Duration {
+	if r.EndTime.IsZero() {
+		return time.Since(r.DateTime)
+	}
+	return r.EndTime.Sub(r.DateTime)
+}
+
 func CreateBuildRecord(buildId BuildId) error {
 	conn, err := getConn(buildId.RootDir)
 	if err != nil {
@@ -27,18 +51,16 @@ func CreateBuildRecord(buildId BuildId) error {
 	return nil
 }
 
-const DateFormat = "2006-01-02 15:04:05"
-
 func MarkBuildFailed(buildId BuildId) error {
-	return updateBuildStatus(buildId, "FAILED")
+	return updateBuildStatus(buildId, FAILED)
 }
 
 func MarkBuildSucceeded(buildId BuildId) error {
-	return updateBuildStatus(buildId, "SUCCEDED")
+	return updateBuildStatus(buildId, SUCCEEDED)
 }
 
-func FindMatchingBuildIds(rootDir string, project string, tag string, datetime string) ([]BuildId, error) {
-	query := "SELECT project, tag, started_at FROM builds WHERE 1 = 1"
+func FindMatchingBuilds(rootDir string, project string, tag string, datetime string) ([]RecordedBuild, error) {
+	query := "SELECT project, tag, started_at, finished_at, status FROM builds WHERE 1 = 1"
 
 	args := make([]interface{}, 0, 0)
 
@@ -67,22 +89,22 @@ func FindMatchingBuildIds(rootDir string, project string, tag string, datetime s
 
 	conn.Query(query, args...)
 
-	buildIds := make([]BuildId, 0, 0)
+	recordedBuilds := make([]RecordedBuild, 0, 0)
 
 	stmt, err := conn.Query(query, args...)
 
 	if err == io.EOF {
-		return buildIds, nil
+		return recordedBuilds, nil
 	} else if err != nil {
 		return nil, err
 	}
 
 	for {
-		buildId, err := scanBuildId(rootDir, stmt)
+		recordedBuild, err := scanBuild(rootDir, stmt)
 		if err != nil {
 			return nil, err
 		}
-		buildIds = append(buildIds, buildId)
+		recordedBuilds = append(recordedBuilds, recordedBuild)
 		if err = stmt.Next(); err == io.EOF {
 			break
 		} else if err != nil {
@@ -90,59 +112,68 @@ func FindMatchingBuildIds(rootDir string, project string, tag string, datetime s
 		}
 	}
 
-	return buildIds, nil
+	return recordedBuilds, nil
 }
 
-func FindLatestBuildId(rootDir string, project string, tag string, datetime string) (*BuildId, error) {
-	buildIds, err := FindMatchingBuildIds(rootDir, project, tag, datetime)
+func FindLatestBuild(rootDir string, project string, tag string, datetime string) (*RecordedBuild, error) {
+	recordedBuilds, err := FindMatchingBuilds(rootDir, project, tag, datetime)
 	if err != nil {
 		return nil, err
 	}
-	if len(buildIds) == 0 {
+	if len(recordedBuilds) == 0 {
 		return nil, nil
 	}
-	return &buildIds[0], nil
+	return &recordedBuilds[0], nil
 }
 
-func FindBuildIdsGreaterThanN(rootDir string, project string, n int) ([]BuildId, error) {
+func FindBuildsGreaterThanN(rootDir string, project string, n int) ([]RecordedBuild, error) {
 	if n < 0 {
 		return nil, fmt.Errorf("Cannot find builds greater than %d", n)
 	}
 
-	buildIds, err := FindMatchingBuildIds(rootDir, project, "", "")
+	recordedBuilds, err := FindMatchingBuilds(rootDir, project, "", "")
 	if err != nil {
-		return buildIds, err
+		return recordedBuilds, err
 	}
 
-	if n > len(buildIds) {
-		n = len(buildIds)
+	if n > len(recordedBuilds) {
+		n = len(recordedBuilds)
 	}
 
-	return buildIds[n:], nil
+	return recordedBuilds[n:], nil
 }
 
-func scanBuildId(rootDir string, stmt *sqlite3.Stmt) (BuildId, error) {
-	var rowProject, rowTag, rowDatetime string
-	err := stmt.Scan(&rowProject, &rowTag, &rowDatetime)
+func scanBuild(rootDir string, stmt *sqlite3.Stmt) (RecordedBuild, error) {
+	var rowProject, rowTag, rowDatetime, rowEndTime, rowStatus string
+	err := stmt.Scan(&rowProject, &rowTag, &rowDatetime, &rowEndTime, &rowStatus)
 	if err != nil {
-		return BuildId{}, err
+		return RecordedBuild{}, err
 	}
 
 	dateTime, err := time.Parse(DateFormat, rowDatetime)
 	if err != nil {
-		return BuildId{}, err
+		return RecordedBuild{}, err
 	}
-	return BuildIdAt(rootDir, rowProject, rowTag, dateTime), nil
+
+	var endTime time.Time
+	if rowEndTime != "" {
+		if endTime, err = time.Parse(DateFormat, rowEndTime); err != nil {
+			return RecordedBuild{}, err
+		}
+	}
+
+	buildId := BuildIdAt(rootDir, rowProject, rowTag, dateTime)
+	return RecordedBuild{&buildId, endTime, BuildStatus(rowStatus)}, nil
 }
 
-func updateBuildStatus(buildId BuildId, status string) error {
+func updateBuildStatus(buildId BuildId, status BuildStatus) error {
 	conn, err := getConn(buildId.RootDir)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	return conn.Exec("UPDATE builds SET status = ?, finished_at = ? WHERE project = ? AND tag = ? AND started_at = ?", status, time.Now().UTC().Format(DateFormat), buildId.Project, buildId.Tag, buildId.DateTime.Format(DateFormat))
+	return conn.Exec("UPDATE builds SET status = ?, finished_at = ? WHERE project = ? AND tag = ? AND started_at = ?", string(status), time.Now().UTC().Format(DateFormat), buildId.Project, buildId.Tag, buildId.DateTime.Format(DateFormat))
 
 }
 
@@ -171,5 +202,5 @@ func createTablesAndIndexes(conn *sqlite3.Conn) error {
 // This acts as the locking mechanism to make sure we don't have two builds in
 // the identical folder, as well as record keeping.
 func insertBuildRecord(conn *sqlite3.Conn, buildId BuildId) error {
-	return conn.Exec("INSERT INTO builds (project, tag, started_at, status) VALUES (?, ?, ?, ?)", buildId.Project, buildId.Tag, buildId.DateTime.Format(DateFormat), "RUNNING")
+	return conn.Exec("INSERT INTO builds (project, tag, started_at, status) VALUES (?, ?, ?, ?)", buildId.Project, buildId.Tag, buildId.DateTime.Format(DateFormat), string(RUNNING))
 }

@@ -37,14 +37,14 @@ func DoListCommand() {
 		datetime = flag.Arg(3)
 	}
 
-	buildIds, err := FindMatchingBuildIds(kerouacRoot, project, tag, datetime)
+	recordedBuilds, err := FindMatchingBuilds(kerouacRoot, project, tag, datetime)
 
 	if err != nil {
 		log.Fatalf("Error finding builds: %s", err)
 	}
 
-	for _, buildId := range buildIds {
-		fmt.Printf("%s\n", buildId.FmtBuildDir())
+	for _, recordedBuild := range recordedBuilds {
+		fmt.Printf("%s\n", recordedBuild.FmtBuildDir())
 	}
 
 }
