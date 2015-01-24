@@ -57,6 +57,10 @@ func DoBuildCommand() {
 	createTarball(srcDir, buildId)
 	maybeRemoveSrcDir(srcDir)
 
+	if err := renderBuildReport(rootDir); err != nil {
+		log.Printf("Warning, error writing build report: %s", err)
+	}
+
 	if buildSuceeded {
 		if err = cleanOldBuilds(buildId.RootDir, buildId.Project, config.NumBuildsToKeep); err != nil {
 			log.Printf("Warning, error trying to remove old builds: %s", err)
@@ -126,6 +130,20 @@ func createTarball(srcDir string, buildId BuildId) {
 			logAndDie(fmt.Sprintf("Error creating tarball: %s", err), buildId)
 		}
 	}
+}
+
+func renderBuildReport(rootDir string) error {
+	reportPath := FmtBuildHTMLReportPath(rootDir)
+	log.Printf("Writing the build report to %s", reportPath)
+
+	if !*dryRun {
+		if builds, err := FindMatchingBuilds(rootDir, "", "", ""); err != nil {
+			return err
+		} else if err := RenderHTMLReport(reportPath, builds); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runBuild(srcDir string, config *Config, buildId BuildId) bool {

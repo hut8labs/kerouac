@@ -19,14 +19,15 @@ const (
 // with filepath.Join just in case this someday works on Windows by pure
 // accident.
 var (
-	KnownDateTime, _ = time.Parse(KnownDateTimeS, KnownDateTimeS)
-	KnownBuildDir    = filepath.Join(KnownRootDir, BuildsDir, KnownProject, KnownTag, KnownDateTimeSU)
-	KnownLogsDir     = filepath.Join(KnownBuildDir, LogsDir)
-	KnownStderrPath  = filepath.Join(KnownLogsDir, StderrLogName)
-	KnownStdoutPath  = filepath.Join(KnownLogsDir, StdoutLogName)
-	KnownKerouacPath = filepath.Join(KnownLogsDir, KerouacLogName)
-	KnownTarballPath = filepath.Join(KnownBuildDir, TarballName)
-	KnownBuildDbPath = filepath.Join(KnownRootDir, BuildDbName)
+	KnownDateTime, _         = time.Parse(KnownDateTimeS, KnownDateTimeS)
+	KnownBuildDir            = filepath.Join(KnownRootDir, BuildsDir, KnownProject, KnownTag, KnownDateTimeSU)
+	KnownLogsDir             = filepath.Join(KnownBuildDir, LogsDir)
+	KnownStderrPath          = filepath.Join(KnownLogsDir, StderrLogName)
+	KnownStdoutPath          = filepath.Join(KnownLogsDir, StdoutLogName)
+	KnownKerouacPath         = filepath.Join(KnownLogsDir, KerouacLogName)
+	KnownTarballPath         = filepath.Join(KnownBuildDir, TarballName)
+	KnownBuildDbPath         = filepath.Join(KnownRootDir, BuildDbName)
+	KnownBuildHTMLReportPath = filepath.Join(KnownRootDir, BuildHTMLReportName)
 )
 
 // Create a known build id from constants, including the datetime, so we can
@@ -88,5 +89,13 @@ func TestFmtBuildDbName(t *testing.T) {
 	buildDbPath := FmtBuildDbPath(buildId.RootDir)
 	if buildDbPath != KnownBuildDbPath {
 		t.Errorf("FmtBuildDbPath returned %s not %s", buildDbPath, KnownBuildDbPath)
+	}
+}
+
+func TestFmtBuildHTMLReportName(t *testing.T) {
+	buildId := knownBuildId()
+	buildHTMLReportPath := FmtBuildHTMLReportPath(buildId.RootDir)
+	if buildHTMLReportPath != KnownBuildHTMLReportPath {
+		t.Errorf("FmtBuildHTMLReportPath returned %s not %s", buildHTMLReportPath, KnownBuildHTMLReportPath)
 	}
 }

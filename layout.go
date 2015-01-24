@@ -25,13 +25,14 @@ import (
 //
 
 const (
-	BuildsDir      = "builds"
-	LogsDir        = "logs"
-	StderrLogName  = "stderr"
-	StdoutLogName  = "stdout"
-	KerouacLogName = "kerouac.log"
-	TarballName    = "build.tar.gz"
-	BuildDbName    = "builds.db"
+	BuildsDir           = "builds"
+	LogsDir             = "logs"
+	StderrLogName       = "stderr"
+	StdoutLogName       = "stdout"
+	KerouacLogName      = "kerouac.log"
+	TarballName         = "build.tar.gz"
+	BuildDbName         = "builds.db"
+	BuildHTMLReportName = "builds.html"
 )
 
 func (buildId BuildId) FmtBuildDir() string {
@@ -61,4 +62,8 @@ func (buildId BuildId) FmtTarballPath() string {
 
 func FmtBuildDbPath(rootDir string) string {
 	return filepath.Join(rootDir, BuildDbName)
+}
+
+func FmtBuildHTMLReportPath(rootDir string) string {
+	return filepath.Join(rootDir, BuildHTMLReportName)
 }
