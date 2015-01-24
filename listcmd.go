@@ -44,7 +44,7 @@ func DoListCommand() {
 	}
 
 	for _, buildId := range buildIds {
-		fmt.Printf("%s\n", FmtBuildDir(buildId))
+		fmt.Printf("%s\n", buildId.FmtBuildDir())
 	}
 
 }

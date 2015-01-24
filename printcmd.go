@@ -42,15 +42,15 @@ func DoPrintCommand() {
 
 	switch path {
 	case "builddir":
-		fmt.Print(FmtBuildDir(*buildId))
+		fmt.Print(buildId.FmtBuildDir())
 	case "stdoutpath":
-		fmt.Print(FmtStdoutLogPath(*buildId))
+		fmt.Print(buildId.FmtStdoutLogPath())
 	case "stderrpath":
-		fmt.Print(FmtStderrLogPath(*buildId))
+		fmt.Print(buildId.FmtStderrLogPath())
 	case "kerouaclogpath":
-		fmt.Print(FmtKerouacLogPath(*buildId))
+		fmt.Print(buildId.FmtKerouacLogPath())
 	case "tarballpath":
-		fmt.Print(FmtTarballPath(*buildId))
+		fmt.Print(buildId.FmtTarballPath())
 	default:
 		log.Printf("Did not recognize path to print: %s\n\n", path)
 		flag.Usage()

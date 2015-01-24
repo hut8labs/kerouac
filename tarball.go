@@ -15,7 +15,7 @@ import (
 // At some point it might make sense to write this using go's tar and gzip
 // utilities, so it could run on systems without tar / be more self contained.
 func CreateTarball(srcDir string, buildId BuildId) error {
-	tarballPath := FmtTarballPath(buildId)
+	tarballPath := buildId.FmtTarballPath()
 	cmd := exec.Command("tar", "-c", "-z", "-C", srcDir, "-f", tarballPath, ".")
 	return cmd.Run()
 }

@@ -39,8 +39,8 @@ func RunBuildScript(buildDir string, buildScript string, buildScriptArgs []strin
 	cmd := exec.Command(buildScript, buildScriptArgs...)
 	cmd.Dir = buildDir
 
-	stdoutPath := FmtStdoutLogPath(buildId)
-	stderrPath := FmtStderrLogPath(buildId)
+	stdoutPath := buildId.FmtStdoutLogPath()
+	stderrPath := buildId.FmtStderrLogPath()
 
 	buildOutput := &BuildOutput{StdoutPath: stdoutPath, StderrPath: stderrPath}
 

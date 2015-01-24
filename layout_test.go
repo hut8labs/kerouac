@@ -37,7 +37,7 @@ func knownBuildId() BuildId {
 
 func TestFmtBuildDir(t *testing.T) {
 	buildId := knownBuildId()
-	buildDir := FmtBuildDir(buildId)
+	buildDir := buildId.FmtBuildDir()
 	if buildDir != KnownBuildDir {
 		t.Errorf("FmtBuildDir returned %s not %s", buildDir, KnownBuildDir)
 	}
@@ -45,7 +45,7 @@ func TestFmtBuildDir(t *testing.T) {
 
 func TestFmtLogsDir(t *testing.T) {
 	buildId := knownBuildId()
-	logsDir := FmtLogsDir(buildId)
+	logsDir := buildId.FmtLogsDir()
 	if logsDir != KnownLogsDir {
 		t.Errorf("FmtLogsDir returned %s not %s", logsDir, KnownLogsDir)
 	}
@@ -53,7 +53,7 @@ func TestFmtLogsDir(t *testing.T) {
 
 func TestFmtStderrLogPath(t *testing.T) {
 	buildId := knownBuildId()
-	stderrPath := FmtStderrLogPath(buildId)
+	stderrPath := buildId.FmtStderrLogPath()
 	if stderrPath != KnownStderrPath {
 		t.Errorf("FmtStderrLogPath returned %s not %s", stderrPath, KnownStderrPath)
 	}
@@ -61,7 +61,7 @@ func TestFmtStderrLogPath(t *testing.T) {
 
 func TestFmtStdoutLogPath(t *testing.T) {
 	buildId := knownBuildId()
-	stdoutPath := FmtStdoutLogPath(buildId)
+	stdoutPath := buildId.FmtStdoutLogPath()
 	if stdoutPath != KnownStdoutPath {
 		t.Errorf("FmtStdoutLogPath returned %s not %s", stdoutPath, KnownStdoutPath)
 	}
@@ -69,7 +69,7 @@ func TestFmtStdoutLogPath(t *testing.T) {
 
 func TestFmtKerouacLogPath(t *testing.T) {
 	buildId := knownBuildId()
-	stdoutPath := FmtKerouacLogPath(buildId)
+	stdoutPath := buildId.FmtKerouacLogPath()
 	if stdoutPath != KnownKerouacPath {
 		t.Errorf("FmtKerouacLogPath returned %s not %s", stdoutPath, KnownKerouacPath)
 	}
@@ -77,7 +77,7 @@ func TestFmtKerouacLogPath(t *testing.T) {
 
 func TestFmtTarballPath(t *testing.T) {
 	buildId := knownBuildId()
-	tarballPath := FmtTarballPath(buildId)
+	tarballPath := buildId.FmtTarballPath()
 	if tarballPath != KnownTarballPath {
 		t.Errorf("FmtTarballPath returned %s not %s", tarballPath, KnownTarballPath)
 	}

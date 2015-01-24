@@ -34,29 +34,29 @@ const (
 	BuildDbName    = "builds.db"
 )
 
-func FmtBuildDir(buildId BuildId) string {
+func (buildId BuildId) FmtBuildDir() string {
 	dateTag := buildId.DateTime.Format("2006_01_02_15_04_05")
 	return filepath.Join(buildId.RootDir, BuildsDir, buildId.Project, buildId.Tag, dateTag)
 }
 
-func FmtLogsDir(buildId BuildId) string {
-	return filepath.Join(FmtBuildDir(buildId), LogsDir)
+func (buildId BuildId) FmtLogsDir() string {
+	return filepath.Join(buildId.FmtBuildDir(), LogsDir)
 }
 
-func FmtStderrLogPath(buildId BuildId) string {
-	return filepath.Join(FmtLogsDir(buildId), StderrLogName)
+func (buildId BuildId) FmtStderrLogPath() string {
+	return filepath.Join(buildId.FmtLogsDir(), StderrLogName)
 }
 
-func FmtStdoutLogPath(buildId BuildId) string {
-	return filepath.Join(FmtLogsDir(buildId), StdoutLogName)
+func (buildId BuildId) FmtStdoutLogPath() string {
+	return filepath.Join(buildId.FmtLogsDir(), StdoutLogName)
 }
 
-func FmtKerouacLogPath(buildId BuildId) string {
-	return filepath.Join(FmtLogsDir(buildId), KerouacLogName)
+func (buildId BuildId) FmtKerouacLogPath() string {
+	return filepath.Join(buildId.FmtLogsDir(), KerouacLogName)
 }
 
-func FmtTarballPath(buildId BuildId) string {
-	return filepath.Join(FmtBuildDir(buildId), TarballName)
+func (buildId BuildId) FmtTarballPath() string {
+	return filepath.Join(buildId.FmtBuildDir(), TarballName)
 }
 
 func FmtBuildDbPath(rootDir string) string {

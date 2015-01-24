@@ -80,7 +80,7 @@ func cleanOldBuilds(rootDir string, project string, buildsToKeep int) error {
 	}
 
 	for _, buildId := range buildIdsToRemove {
-		buildDir := FmtBuildDir(buildId)
+		buildDir := buildId.FmtBuildDir()
 		log.Printf("Removing old build dir %s", buildDir)
 		if err = os.RemoveAll(buildDir); err != nil {
 			return err
@@ -119,7 +119,7 @@ func maybeRemoveSrcDir(srcDir string) {
 }
 
 func createTarball(srcDir string, buildId BuildId) {
-	log.Printf("Tarballing %s into %s", srcDir, FmtTarballPath(buildId))
+	log.Printf("Tarballing %s into %s", srcDir, buildId.FmtTarballPath())
 
 	if !*dryRun {
 		if err := CreateTarball(srcDir, buildId); err != nil {
@@ -153,7 +153,7 @@ func runBuild(srcDir string, config *Config, buildId BuildId) bool {
 }
 
 func configureLogging(buildId BuildId) *os.File {
-	logsDir := FmtLogsDir(buildId)
+	logsDir := buildId.FmtLogsDir()
 
 	log.Printf("Creating logs dir %s with perms 0700", logsDir)
 
@@ -162,7 +162,7 @@ func configureLogging(buildId BuildId) *os.File {
 		os.MkdirAll(logsDir, 0700)
 	}
 
-	logPath := FmtKerouacLogPath(buildId)
+	logPath := buildId.FmtKerouacLogPath()
 
 	log.Printf("Creating log at %s", logPath)
 
@@ -188,5 +188,5 @@ func configureLogging(buildId BuildId) *os.File {
 
 func logStart(buildId BuildId) {
 	log.Printf("Starting build of %s with tag %s at %s", buildId.Project, buildId.Tag, buildId.DateTime.Format("2006-01-02 15:04:05 (MST)"))
-	log.Printf("Build dir is %s", FmtBuildDir(buildId))
+	log.Printf("Build dir is %s", buildId.FmtBuildDir())
 }
