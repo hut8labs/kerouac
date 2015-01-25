@@ -1,11 +1,23 @@
-#* 
+#*
 #* author: Matt Papi
 #* email: mmpapi@gmail.com
 #* date: 2015-01-24T15:20:15-0500
-#* 
+#*
 #- Render a simple HTML report on build.
-#- 
-#- 
+#-
+#-
+#**
+#** author: Edmund Jorgensen
+#** email: tomheon@gmail.com
+#** date: 2015-01-24T21:35:08-0500
+#**
+#-- LGTM (and I learned some idiomatic go reading it, for which thanks).
+#--
+#-- One request for an updated comment.
+#--
+#-- And we can chat IRL about a couple larger rendering q's--e.g. do we want
+#-- render to be only a separate call, or suppressible with an option, etc.
+#--
 diff --git a/buildcmd.go b/buildcmd.go
 index 9d00668..56ebcc6 100644
 --- a/buildcmd.go
@@ -14,23 +26,23 @@ index 9d00668..56ebcc6 100644
  	if *dryRun {
  		log.Printf("Dry run, will print actions but not take them.")
  	}
- 
+
  	createBuildRecord(buildId)
- 
+
  	logFile := configureLogging(buildId)
  	defer logFile.Close()
- 
+
  	logStart(buildId)
- 
+
  	config, err := ParseConfigFile(configFile)
  	if err != nil {
  		logAndDie(fmt.Sprintf("Error parsing config file: %s", err), buildId)
  	}
- 
+
  	buildSuceeded := runBuild(srcDir, config, buildId)
  	createTarball(srcDir, buildId)
  	maybeRemoveSrcDir(srcDir)
- 
+
 +	if err := renderBuildReport(rootDir); err != nil {
 +		log.Printf("Warning, error writing build report: %s", err)
 +	}
@@ -39,19 +51,19 @@ index 9d00668..56ebcc6 100644
  		if err = cleanOldBuilds(buildId.RootDir, buildId.Project, config.NumBuildsToKeep); err != nil {
  			log.Printf("Warning, error trying to remove old builds: %s", err)
  		}
- 
+
  		os.Exit(0)
  	} else {
  		os.Exit(1)
  	}
- 
+
  }
- 
+
  func cleanOldBuilds(rootDir string, project string, buildsToKeep int) error {
  	if buildsToKeep < 1 {
  		return fmt.Errorf("Refusing to keep < 1 build, not deleting any: %d", buildsToKeep)
  	}
- 
+
  	buildsToRemove, err := FindBuildsGreaterThanN(rootDir, project, buildsToKeep)
  	if err != nil {
  		return err
@@ -65,17 +77,17 @@ index 9d00668..56ebcc6 100644
  		}
  	}
  }
- 
+
  func createTarball(srcDir string, buildId BuildId) {
  	log.Printf("Tarballing %s into %s", srcDir, buildId.FmtTarballPath())
- 
+
  	if !*dryRun {
  		if err := CreateTarball(srcDir, buildId); err != nil {
  			logAndDie(fmt.Sprintf("Error creating tarball: %s", err), buildId)
  		}
  	}
  }
- 
+
 +func renderBuildReport(rootDir string) error {
 +	reportPath := FmtBuildHTMLReportPath(rootDir)
 +	log.Printf("Writing the build report to %s", reportPath)
@@ -92,12 +104,12 @@ index 9d00668..56ebcc6 100644
 +
  func runBuild(srcDir string, config *Config, buildId BuildId) bool {
  	log.Printf("Running build in dir %s with script %s and args %s", srcDir, config.BuildScript, config.BuildScriptArgs)
- 
+
  	succeeded := false
- 
+
  	if !*dryRun {
  		buildOutput, err := RunBuildScript(srcDir, config.BuildScript, config.BuildScriptArgs, config.TimeoutInSecs, buildId)
- 
+
  		if err != nil {
  			log.Printf("Completed build with error: %s", err)
  			if err := MarkBuildFailed(buildId); err != nil {
@@ -132,8 +144,16 @@ index bc9edd4..bf28cf9 100644
  //             kerouac.log [FmtKerouacLogPath]
  // - index.html
  // - pages
+#*
+#* author: Edmund Jorgensen
+#* email: tomheon@gmail.com
+#* date: 2015-01-24T21:31:32-0500
+#*
+#- I found this comment helpful when working on various pieces--what do you
+#- think about updating it with the function for the build report path?
+#-
  //
- 
+
  const (
 -	BuildsDir      = "builds"
 -	LogsDir        = "logs"
@@ -151,32 +171,32 @@ index bc9edd4..bf28cf9 100644
 +	BuildDbName         = "builds.db"
 +	BuildHTMLReportName = "builds.html"
  )
- 
+
  func (buildId BuildId) FmtBuildDir() string {
  	dateTag := buildId.DateTime.Format("2006_01_02_15_04_05")
  	return filepath.Join(buildId.RootDir, BuildsDir, buildId.Project, buildId.Tag, dateTag)
  }
- 
+
  func (buildId BuildId) FmtLogsDir() string {
  	return filepath.Join(buildId.FmtBuildDir(), LogsDir)
  }
- 
+
  func (buildId BuildId) FmtStderrLogPath() string {
  	return filepath.Join(buildId.FmtLogsDir(), StderrLogName)
  }
- 
+
  func (buildId BuildId) FmtStdoutLogPath() string {
  	return filepath.Join(buildId.FmtLogsDir(), StdoutLogName)
  }
- 
+
  func (buildId BuildId) FmtKerouacLogPath() string {
  	return filepath.Join(buildId.FmtLogsDir(), KerouacLogName)
  }
- 
+
  func (buildId BuildId) FmtTarballPath() string {
  	return filepath.Join(buildId.FmtBuildDir(), TarballName)
  }
- 
+
  func FmtBuildDbPath(rootDir string) string {
  	return filepath.Join(rootDir, BuildDbName)
  }
@@ -189,13 +209,13 @@ index 3474d6a..a0d9147 100644
 --- a/layout_test.go
 +++ b/layout_test.go
 @@ -2,48 +2,49 @@ package main
- 
+
  import (
  	"path/filepath"
  	"testing"
  	"time"
  )
- 
+
  // Hardcoded values for our synthetic build.
  const (
  	KnownRootDir    = "known_test_root"
@@ -204,7 +224,7 @@ index 3474d6a..a0d9147 100644
  	KnownDateTimeS  = "2006-01-02 15:04:05"
  	KnownDateTimeSU = "2006_01_02_15_04_05"
  )
- 
+
  // Do a bunch of the same work we expect layout to do so we can test, but do it
  // with filepath.Join just in case this someday works on Windows by pure
  // accident.
@@ -227,13 +247,13 @@ index 3474d6a..a0d9147 100644
 +	KnownBuildDbPath         = filepath.Join(KnownRootDir, BuildDbName)
 +	KnownBuildHTMLReportPath = filepath.Join(KnownRootDir, BuildHTMLReportName)
  )
- 
+
  // Create a known build id from constants, including the datetime, so we can
  // expect deterministic results.
  func knownBuildId() BuildId {
  	return BuildId{RootDir: KnownRootDir, Project: KnownProject, Tag: KnownTag, DateTime: KnownDateTime}
  }
- 
+
  func TestFmtBuildDir(t *testing.T) {
  	buildId := knownBuildId()
  	buildDir := buildId.FmtBuildDir()
@@ -241,7 +261,7 @@ index 3474d6a..a0d9147 100644
  		t.Errorf("FmtBuildDir returned %s not %s", buildDir, KnownBuildDir)
  	}
  }
- 
+
  func TestFmtLogsDir(t *testing.T) {
  	buildId := knownBuildId()
  	logsDir := buildId.FmtLogsDir()
@@ -251,7 +271,7 @@ index 3474d6a..a0d9147 100644
  		t.Errorf("FmtKerouacLogPath returned %s not %s", stdoutPath, KnownKerouacPath)
  	}
  }
- 
+
  func TestFmtTarballPath(t *testing.T) {
  	buildId := knownBuildId()
  	tarballPath := buildId.FmtTarballPath()
@@ -259,7 +279,7 @@ index 3474d6a..a0d9147 100644
  		t.Errorf("FmtTarballPath returned %s not %s", tarballPath, KnownTarballPath)
  	}
  }
- 
+
  func TestFmtBuildDbName(t *testing.T) {
  	buildId := knownBuildId()
  	buildDbPath := FmtBuildDbPath(buildId.RootDir)
